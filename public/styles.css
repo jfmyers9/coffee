@@ -106,6 +106,8 @@ footer span { font: 10px sans-serif; }
 .notice:empty { display: none; }
 #service-message { margin: 18px 0 0; }
 #brew-bag { width: 100%; text-overflow: ellipsis; }
+#recipe-variant { width: 100%; }
+#ice-guide { margin-top: 16px; }
 #brew-bag-hint { margin: 10px 0 4px; overflow-wrap: anywhere; }
 .inline-link { display: inline-block; color: var(--accent); font-size: 12px; padding: 8px 0 22px; }
 #temperature-f { width: 100%; padding: 12px; font-size: 18px; background: var(--card); }

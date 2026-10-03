@@ -90,6 +90,22 @@ These are opinionated starting recipes for medium-roast beans, not manufacturer-
 
 Water targets mean **water added**, not beverage yield. Tare once before brewing; don't tare between pours. Pour rates are suggested averages, not measurements. Never overflow the brewer to keep up with the timer: pause the guide if the bed is full. The timer does not auto-finish at the target drawdown time; tap Finish brew when draining is done.
 
+### Japanese iced V60
+
+Choose **V60 → Japanese iced**. This recipe keeps its own remembered dose and grinder override, separate from hot V60, and is saved/repeated as an iced recipe in the journal.
+
+At the default **15 g coffee**, start at **203°F** and **Encore 13** (two clicks finer than the hot V60 starting suggestion; adjust to taste):
+
+1. Rinse the filter and discard the rinse water. Add **75 g ice** to the carafe, assemble the brewer with grounds, then **tare the scale**.
+2. **0:00–0:10:** bloom to **30 g**, about **3 g/s**; rest until **0:30**.
+3. **0:30–0:50:** pour to **90 g**, about **3 g/s**; rest until **1:00**.
+4. **1:00–1:20:** pour to **150 g**, about **3 g/s**.
+5. Let drain, aiming around **2:30**. Finish when drained, swirl to chill, and **top with ice to taste**.
+
+These timings are app starting points, not timings attributed to the original video. Hot water is 10× the bean dose and brewing ice is 5×: **150 g hot water + 75 g ice = 225 g combined**, a nominal 1:15 ratio **before topping ice**, not beverage yield. Only hot-water additions appear in pour targets and the journal's actual-water field. Ice must not be included when reading those targets. Weights round to whole grams; pour durations scale with dose to keep roughly the same flow rate. Bloom ends at 30 seconds, the inter-pour rest stays 10 seconds, and drawdown has a 70-second starting allowance. The temperature remains editable; switching recipes preserves your chosen water temperature.
+
+Existing saved brews and queued events without a variant remain hot recipes. No database migration is needed for this additive snapshot metadata.
+
 ## Persistence, backup, and limits
 
 - Bags, photos, the default bag, brew history, recipe snapshots, and results live in Postgres and are shared across devices. Personal recipe input preferences and active timer controls remain browser-local; you cannot take over a running timer on another phone. Refresh/navigate to see another device's changes.

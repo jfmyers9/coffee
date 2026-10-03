@@ -58,6 +58,27 @@ test('Postgres API integration', { skip: !databaseUrl && 'Set TEST_DATABASE_URL 
   const createBag = extra => ok('/api/bags', 'POST', bagInput(extra), 201);
   const createBrew = extra => ok('/api/brews', 'POST', brewInput(extra), 201);
 
+  await t.test('iced variants persist water and ice separately and preserve legacy hot retries', async () => {
+    const input = brewInput({ dose: 15, variant: 'japanese-iced' });
+    const iced = await ok('/api/brews', 'POST', input, 201);
+    assert.equal(iced.variant, 'japanese-iced');
+    assert.equal(iced.water, 150);
+    assert.equal(iced.ice, 75);
+    assert.equal(iced.totalWater, 225);
+    assert.equal(iced.recipe.variant, 'japanese-iced');
+    assert.deepEqual(await ok(`/api/brews/${iced.id}`), iced);
+    assert.deepEqual(await ok('/api/brews', 'POST', input), iced);
+    assert.equal((await request('/api/brews', { method: 'POST', body: { ...input, variant: 'hot' } })).status, 409);
+    assert.equal((await request('/api/brews', { method: 'POST', body: brewInput({ brewer: 'chemex', dose: 30, variant: 'japanese-iced' }) })).status, 400);
+    assert.equal((await request(`/api/brews/${iced.id}`, { method: 'PATCH', body: { variant: 'hot' } })).status, 400);
+    const legacyInput = brewInput();
+    const hot = await ok('/api/brews', 'POST', legacyInput, 201);
+    // Simulate an already saved pre-variant request, still waiting in an old outbox.
+    await pool.query("UPDATE brews SET request=request-'variant' WHERE id=$1", [hot.id]);
+    assert.deepEqual(await ok('/api/brews', 'POST', legacyInput), hot);
+    assert.deepEqual(await ok('/api/brews', 'POST', { ...legacyInput, variant: 'hot' }), hot);
+  });
+
   await t.test('bags become default, preserve optional fields, and archive safely', async () => {
     const first = await createBag({ weightGrams: 250, price: 0, caffeineType: 'decaf', roastedOn: '2024-02-29', notes: 'Bag notes' });
     assert.equal(first.caffeineType, 'decaf');

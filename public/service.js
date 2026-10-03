@@ -306,11 +306,13 @@ export async function initService({ onBrewAgain = () => {}, onBagsChanged = () =
       card.append(node('h3', bagName(snapshot)), node('span', brew.status, 'badge'));
       const date = new Date(brew.startedAt || brew.createdAt);
       card.append(node('p', Number.isNaN(date.getTime()) ? 'Date not recorded' : date.toLocaleString(), 'muted'));
-      card.append(node('p', `${brew.brewer === 'v60' ? 'V60' : brew.brewer === 'chemex' ? 'Chemex' : brew.brewer} · ${brew.dose} g coffee · ${brew.water} g water${brew.temperatureF != null ? ` · ${brew.temperatureF}°F` : ''}${brew.grindSetting != null ? ` · grind ${brew.grindSetting}` : ''}`));
+      const iced = (brew.variant ?? brew.recipe?.variant) === 'japanese-iced';
+      card.append(node('p', `${brew.brewer === 'v60' ? 'V60' : brew.brewer === 'chemex' ? 'Chemex' : brew.brewer} · ${iced ? 'Japanese iced' : 'Hot'} · ${brew.dose} g coffee · ${brew.water} g ${iced ? 'hot ' : ''}water${brew.temperatureF != null ? ` · ${brew.temperatureF}°F` : ''}${brew.grindSetting != null ? ` · grind ${brew.grindSetting}` : ''}`));
+      if (iced) card.append(node('p', `${brew.ice ?? brew.recipe.ice} g brewing ice · ${brew.totalWater ?? brew.recipe.totalWater} g combined water + ice, before topping ice`, 'muted'));
       if (snapshot?.caffeineType) card.append(node('p', snapshot.caffeineType, 'tag'));
       if (brew.elapsedSeconds != null) card.append(node('p', `${Math.floor(brew.elapsedSeconds / 60)}:${String(Math.floor(brew.elapsedSeconds % 60)).padStart(2, '0')} elapsed`, 'muted'));
       if (brew.rating || brew.taste) card.append(node('p', [brew.rating ? `${brew.rating}/5` : '', brew.taste].filter(Boolean).join(' · ')));
-      if (brew.waterActual != null) card.append(node('p', `Actual water added: ${brew.waterActual} g`));
+      if (brew.waterActual != null) card.append(node('p', `Actual ${iced ? 'hot ' : ''}water added: ${brew.waterActual} g`));
       if (brew.notes) card.append(node('p', brew.notes));
       for (const serving of brew.servings || []) card.append(node('p', `${serving.person}: ${serving.volumeMl ?? 'unknown'} ml · milk: ${serving.milk || 'none'} · caffeine: ${serving.caffeineMg == null ? 'unknown' : `${serving.caffeineMg} mg (entered)`}`, 'muted'));
       const row = node('div', null, 'button-row');
@@ -349,7 +351,7 @@ export async function initService({ onBrewAgain = () => {}, onBagsChanged = () =
       const grid = node('div', null, 'form-grid');
       const rating = field(grid, 'Rating (optional)', 'rating', brew.rating, 'text', [['', 'Not rated'], ...[1, 2, 3, 4, 5].map(value => [String(value), `${value}/5`])]);
       const taste = field(grid, 'Taste (optional)', 'taste', brew.taste, 'text', [['', 'Not recorded'], ...['balanced', 'sour', 'bitter', 'weak', 'strong'].map(value => [value, value])]);
-      const water = field(grid, 'Actual water added (g, optional)', 'waterActual', brew.waterActual, 'number');
+      const water = field(grid, brew.variant === 'japanese-iced' ? 'Actual hot water added (g, excludes ice, optional)' : 'Actual water added (g, optional)', 'waterActual', brew.waterActual, 'number');
       water.max = '2000';
       const notes = field(grid, 'Brew notes', 'notes', brew.notes, 'textarea');
       notes.maxLength = 5000;

@@ -20,9 +20,10 @@ async function listBags(client) {
   return { bags: bags.rows.map(presentBag), defaultBagId: settings.rows[0].default_bag_id };
 }
 function brewInput(body) {
-  keys(body, ['id', 'bagId', 'brewer', 'dose', 'temperatureF', 'grindSetting', 'startedAt']);
+  keys(body, ['id', 'bagId', 'brewer', 'variant', 'dose', 'temperatureF', 'grindSetting', 'startedAt']);
   const input = { id: uuid(body.id), bagId: body.bagId == null ? null : uuid(body.bagId), brewer: choice(body.brewer, 'brewer', ['v60', 'chemex']), dose: number(body.dose, 'dose', 0, 45), temperatureF: number(body.temperatureF, 'temperatureF', 140, 212), grindSetting: string(body.grindSetting, 'grindSetting', 80, true), startedAt: body.startedAt === undefined ? null : timestamp(body.startedAt) };
-  try { return { input, recipe: createRecipe(input.brewer, input.dose) }; }
+  input.variant = body.variant === undefined ? 'hot' : choice(body.variant, 'variant', ['hot', 'japanese-iced']);
+  try { return { input, recipe: createRecipe(input.brewer, input.dose, input.variant) }; }
   catch { invalid('Invalid brewer dose (use supported range and 0.1 g increments)'); }
 }
 function pagination(value, fallback, max) {
@@ -84,7 +85,8 @@ export async function api({ pool, method, url, body }) {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [input.id]);
       const existing = await client.query('SELECT request,data FROM brews WHERE id=$1', [input.id]);
       if (existing.rowCount) {
-        if (!isDeepStrictEqual(existing.rows[0].request, input)) throw new HttpError(409, 'Brew ID already used with different start data');
+        // Older queued requests and persisted records predate recipe variants.
+        if (!isDeepStrictEqual({ variant: 'hot', ...existing.rows[0].request }, input)) throw new HttpError(409, 'Brew ID already used with different start data');
         return { data: existing.rows[0].data };
       }
       let bagSnapshot = null;
@@ -94,7 +96,7 @@ export async function api({ pool, method, url, body }) {
         const { name, roaster, caffeineType } = bag.rows[0].data;
         bagSnapshot = { name, roaster, caffeineType };
       }
-      const data = { ...input, startedAt: input.startedAt ?? new Date().toISOString(), recipe, water: recipe.water, bagSnapshot, status: 'brewing', elapsedSeconds: 0, finishedAt: null, rating: null, taste: null, notes: '', waterActual: null, servings: [] };
+      const data = { ...input, startedAt: input.startedAt ?? new Date().toISOString(), recipe, water: recipe.water, ice: recipe.ice, totalWater: recipe.totalWater, bagSnapshot, status: 'brewing', elapsedSeconds: 0, finishedAt: null, rating: null, taste: null, notes: '', waterActual: null, servings: [] };
       await client.query('INSERT INTO brews(id,bag_id,dose,started_at,status,request,data) VALUES($1,$2,$3,$4,$5,$6,$7)', [data.id, data.bagId, data.dose, data.startedAt, data.status, input, data]);
       return { status: 201, data };
     });

@@ -48,3 +48,39 @@ test('clock formatting', () => {
   assert.equal(formatTime(65.8), '1:05');
   assert.equal(formatTime(270), '4:30');
 });
+
+test('Japanese iced separates ice from cumulative hot-water targets', () => {
+  const recipe = createRecipe('v60', 15, 'japanese-iced');
+  assert.equal(recipe.water, 150);
+  assert.equal(recipe.ice, 75);
+  assert.equal(recipe.totalWater, 225);
+  assert.equal(recipe.ratio, 15);
+  assert.equal(recipe.grind, 'Encore · 13');
+  assert.equal(recipe.duration, 150);
+  assert.equal(recipe.finish, recipe.duration);
+  assert.equal(recipe.pourSeconds, 20);
+  assert.deepEqual(recipe.steps.filter(step => step.pouring).map(step => [step.start, step.end, step.target, step.rate]), [[0, 10, 30, 3], [30, 50, 90, 3], [60, 80, 150, 3]]);
+  assert.equal(recipe.steps[currentStep(recipe, 30)].title, 'Pour 1');
+  assert.equal(recipe.steps[currentStep(recipe, 60)].target, 150);
+  assert.match(recipe.prep, /discard.*rinse water.*ice/i);
+  assert.match(recipe.finishInstruction, /top with ice/);
+});
+
+test('iced doses scale water and ice without treating ice as poured water', () => {
+  for (let tenths = 120; tenths <= 300; tenths++) {
+    const recipe = createRecipe('v60', tenths / 10, 'japanese-iced');
+    assert.equal(recipe.water, tenths);
+    assert.equal(recipe.ice, Math.round(tenths / 2));
+    assert.equal(recipe.totalWater, recipe.water + recipe.ice);
+    assert.equal(recipe.steps.reduce((sum, step) => sum + step.added, 0), recipe.water);
+    let end = 0;
+    for (const step of recipe.steps) {
+      assert.equal(step.start, end);
+      assert.ok(step.end > step.start);
+      end = step.end;
+    }
+  }
+  assert.throws(() => createRecipe('chemex', 30, 'japanese-iced'), RangeError);
+  assert.throws(() => createRecipe('v60', 15, 'unknown'), RangeError);
+  assert.deepEqual(createRecipe('v60', 20), createRecipe('v60', 20, 'hot'));
+});

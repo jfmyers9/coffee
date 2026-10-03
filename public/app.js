@@ -1,4 +1,4 @@
-import { BREWERS, createRecipe, currentStep, formatTime } from './recipe.js';
+import { BREWERS, recipeConfig, createRecipe, currentStep, formatTime } from './recipe.js';
 import { elapsed, startTimer, pauseTimer, resumeTimer, validTimer } from './timer.js';
 import { readState, saveState } from './storage.js';
 import { api, newId } from './api.js';
@@ -12,21 +12,26 @@ const setText = (id, value) => {
 };
 const saved = readState();
 let brewer = Object.hasOwn(BREWERS, saved.brewer) ? saved.brewer : 'v60';
+let v60Variant = saved.v60Variant === 'japanese-iced' ? 'japanese-iced' : 'hot';
+const variant = () => brewer === 'v60' ? v60Variant : 'hot';
+const preferenceKey = (device = brewer, style = variant()) => style === 'hot' ? device : `${device}:${style}`;
 const doses = {};
 const notes = {};
-for (const key of Object.keys(BREWERS)) {
-  try { doses[key] = createRecipe(key, saved.doses?.[key]).dose; }
-  catch { doses[key] = BREWERS[key].dose; }
+for (const [device, style] of [['v60', 'hot'], ['chemex', 'hot'], ['v60', 'japanese-iced']]) {
+  const key = preferenceKey(device, style);
+  try { doses[key] = createRecipe(device, saved.doses?.[key], style).dose; }
+  catch { doses[key] = recipeConfig(device, style).dose; }
   notes[key] = typeof saved.notes?.[key] === 'string' ? saved.notes[key].slice(0, 80) : '';
 }
-let recipe = createRecipe(brewer, doses[brewer]);
+let recipe = createRecipe(brewer, doses[preferenceKey()], variant());
 let timer = null;
 // Restore only a complete, valid recipe/timer pair, never a partial session.
 if (validTimer(saved.session?.timer)) {
   try {
-    recipe = createRecipe(saved.session.brewer, saved.session.dose);
+    recipe = createRecipe(saved.session.brewer, saved.session.dose, saved.session.variant ?? 'hot');
     brewer = recipe.brewer;
-    doses[brewer] = recipe.dose;
+    if (brewer === 'v60') v60Variant = recipe.variant;
+    doses[preferenceKey()] = recipe.dose;
     timer = saved.session.timer;
   } catch { /* Fall back to the saved preferences. */ }
 }
@@ -107,8 +112,8 @@ async function refreshSummary() {
 }
 
 function persist() {
-  $('storage-warning').hidden = saveState({ brewer, doses, notes, temperatureF,
-    session: timer ? { brewer, dose: recipe.dose, timer, brewId, bagId: sessionBagId } : null });
+  $('storage-warning').hidden = saveState({ brewer, v60Variant, doses, notes, temperatureF,
+    session: timer ? { brewer, variant: variant(), dose: recipe.dose, timer, brewId, bagId: sessionBagId } : null });
 }
 
 async function syncWakeLock() {
@@ -148,14 +153,21 @@ function renderRecipe(syncDose = true) {
   if (syncDose) $('dose').value = recipe.dose;
   $('dose').min = recipe.min;
   $('dose').max = recipe.max;
-  $('grind-note').value = notes[brewer];
+  $('grind-note').value = notes[preferenceKey()];
+  $('variant-field').hidden = brewer !== 'v60';
+  $('recipe-variant').value = variant();
   document.querySelectorAll('[data-brewer]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.brewer === brewer));
   });
   setText('dose-hint', `${recipe.min}–${recipe.max} g · for ${recipe.name} ${recipe.size}`);
   setText('water', `${recipe.water} g`);
+  setText('water-label', recipe.ice ? 'HOT WATER' : 'WATER');
+  setText('ratio-label', recipe.ice ? 'COMBINED RATIO' : 'RATIO');
+  setText('ratio', `1 : ${recipe.ratio}`);
+  $('ice-guide').hidden = !recipe.ice;
+  setText('ice-guide', `${recipe.ice} g brewing ice + ${recipe.water} g hot water = ${recipe.totalWater} g combined. Add ice after discarding rinse water, then tare before pouring. Extra topping ice is not included.`);
   setText('temperature', `${temperatureF}°F`);
-  setText('grind', notes[brewer] || recipe.grind);
+  setText('grind', notes[preferenceKey()] || recipe.grind);
   setText('texture', recipe.texture);
   setText('prep', recipe.prep);
   setText('duration', `About ${formatTime(recipe.duration)}`);
@@ -198,16 +210,16 @@ function renderTimer() {
   setText('status', finished ? 'ENJOY' : timer?.status === 'paused' ? 'PAUSED' : timer ? 'BREWING' : 'READY');
   setText('clock', formatTime(seconds));
   $('progress').value = Math.min(100, seconds / recipe.duration * 100);
-  setText('phase-label', !timer ? 'A MOMENT TO SLOW DOWN' : finished ? 'YOUR COFFEE, YOUR MOMENT' : `${recipe.name} · ${recipe.dose} G COFFEE · ${recipe.water} G WATER`);
+  setText('phase-label', !timer ? 'A MOMENT TO SLOW DOWN' : finished ? 'YOUR COFFEE, YOUR MOMENT' : `${recipe.name}${recipe.ice ? ' ICED' : ''} · ${recipe.dose} G COFFEE · ${recipe.water} G ${recipe.ice ? 'HOT ' : ''}WATER`);
   setText('timing', !timer ? `About ${formatTime(recipe.duration)} from first pour to last drip`
     : finished ? `Brew ended at ${formatTime(seconds)}`
     : index < 0 ? 'Target time reached · finish when the bed has drained'
     : `${formatTime(Math.ceil(step.end - seconds))} left in this step${timer.status === 'paused' ? ' · timer paused' : ''}`);
   setText('instruction-title', finished ? 'Enjoy your coffee.' : !timer ? 'Ready when you are.' : index < 0 ? 'Let the last drops fall.' : step.title);
-  setText('instruction', finished ? 'Swirl, sip, and tell your journal how it went. Log a serving for each person who shared the brew.'
-    : !timer ? 'Tare your scale. Start the timer as you begin the bloom pour.'
+  setText('instruction', finished ? `${recipe.finishInstruction} Log a serving for each person who shared the brew.`
+    : !timer ? recipe.ice ? `Add ${recipe.ice} g ice to the carafe, assemble the brewer, then tare. Start as you begin the bloom pour.` : 'Tare your scale. Start the timer as you begin the bloom pour.'
     : index < 0 ? 'No more water. The timer will keep running until you tap Finish brew.' : step.instruction);
-  setText('target-label', !timer ? 'FIRST SCALE TARGET' : finished ? 'RECIPE WATER' : step.pouring && index >= 0 ? 'POUR TO · SCALE TARGET' : 'WATER ADDED · TARGET');
+  setText('target-label', !timer ? 'FIRST SCALE TARGET' : finished ? recipe.ice ? 'HOT WATER POURED' : 'RECIPE WATER' : step.pouring && index >= 0 ? 'POUR TO · SCALE TARGET' : 'WATER ADDED · TARGET');
   setText('target', `${finished ? recipe.water : step.target} g`);
   setText('rate-label', finished ? 'COFFEE' : 'POUR RATE');
   setText('rate', finished ? `${recipe.dose} g` : step.pouring && index >= 0 ? `${step.rate.toFixed(1)} g/s` : 'No pour');
@@ -227,9 +239,9 @@ function updateDose() {
     if (!Number.isInteger(temperature) || temperature < 140 || temperature > 212) {
       throw new Error('Enter a water temperature from 140–212°F in whole degrees.');
     }
-    recipe = createRecipe(brewer, $('dose').valueAsNumber);
+    recipe = createRecipe(brewer, $('dose').valueAsNumber, variant());
     temperatureF = temperature;
-    doses[brewer] = recipe.dose;
+    doses[preferenceKey()] = recipe.dose;
     $('dose-error').hidden = true;
     $('dose').setAttribute('aria-invalid', 'false');
     $('start').disabled = false;
@@ -247,9 +259,15 @@ document.querySelectorAll('[data-brewer]').forEach(button => {
   button.addEventListener('click', () => {
     if (timer) return;
     brewer = button.dataset.brewer;
-    $('dose').value = doses[brewer];
+    $('dose').value = doses[preferenceKey()];
     updateDose();
   });
+});
+$('recipe-variant').addEventListener('change', () => {
+  if (timer) return;
+  v60Variant = $('recipe-variant').value;
+  $('dose').value = doses[preferenceKey()];
+  updateDose();
 });
 $('dose').addEventListener('input', updateDose);
 $('temperature-f').addEventListener('input', updateDose);
@@ -261,8 +279,8 @@ for (const [id, delta] of [['less', -1], ['more', 1]]) {
   });
 }
 $('grind-note').addEventListener('input', () => {
-  notes[brewer] = $('grind-note').value.trim().slice(0, 80);
-  setText('grind', notes[brewer] || recipe.grind);
+  notes[preferenceKey()] = $('grind-note').value.trim().slice(0, 80);
+  setText('grind', notes[preferenceKey()] || recipe.grind);
   persist();
 });
 $('start').addEventListener('click', () => {
@@ -271,8 +289,8 @@ $('start').addEventListener('click', () => {
   sessionBagId = $('brew-bag').value || null;
   timer = startTimer();
   void queueBrew('/api/brews', 'POST', {
-    id: brewId, bagId: sessionBagId, brewer, dose: recipe.dose,
-    temperatureF, grindSetting: notes[brewer] || recipe.grind,
+    id: brewId, bagId: sessionBagId, brewer, variant: variant(), dose: recipe.dose,
+    temperatureF, grindSetting: notes[preferenceKey()] || recipe.grind,
     startedAt: new Date(timer.startedAt).toISOString(),
   });
   persist();
@@ -376,8 +394,9 @@ service = await initService({
       return;
     }
     brewer = brew.brewer;
-    doses[brewer] = brew.dose;
-    notes[brewer] = brew.grindSetting;
+    if (brewer === 'v60') v60Variant = brew.variant ?? brew.recipe?.variant ?? 'hot';
+    doses[preferenceKey()] = brew.dose;
+    notes[preferenceKey()] = brew.grindSetting;
     temperatureF = brew.temperatureF;
     $('temperature-f').value = temperatureF;
     $('dose').value = brew.dose;
