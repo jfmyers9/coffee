@@ -11,6 +11,8 @@ const assets = new Map([
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ...['app', 'recipe', 'timer', 'storage', 'service', 'api', 'sync'].map(name => [`/${name}.js`, [`${name}.js`, 'text/javascript; charset=utf-8']]),
   ['/icon.svg', ['icon.svg', 'image/svg+xml']],
+  ['/favicon.ico', ['favicon.ico', 'image/vnd.microsoft.icon']],
+  ['/apple-touch-icon.png', ['apple-touch-icon.png', 'image/png']],
 ]);
 function checkWrite(req, appOrigin) {
   if (req.headers['sec-fetch-site'] === 'cross-site') throw new HttpError(403, 'Cross-site writes are not allowed');
