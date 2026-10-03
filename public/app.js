@@ -1,6 +1,9 @@
 import { BREWERS, createRecipe, currentStep, formatTime } from './recipe.js';
 import { elapsed, startTimer, pauseTimer, resumeTimer, validTimer } from './timer.js';
 import { readState, saveState } from './storage.js';
+import { api, newId } from './api.js';
+import { initService } from './service.js';
+import { queueBrew, flushBrews, watchSync, acceptServerVersions } from './sync.js';
 
 const $ = id => document.getElementById(id);
 const setText = (id, value) => {
@@ -29,10 +32,83 @@ if (validTimer(saved.session?.timer)) {
 }
 let wakeLock = null;
 let wakePending = false;
+let service;
+let terminalSave = Promise.resolve();
+let brewId = timer && typeof saved.session?.brewId === 'string' ? saved.session.brewId : null;
+let sessionBagId = timer ? saved.session?.bagId || null : null;
+let temperatureF = Number.isInteger(saved.temperatureF) && saved.temperatureF >= 140 && saved.temperatureF <= 212 ? saved.temperatureF : 203;
+$('temperature-f').value = temperatureF;
+
+function message(value) {
+  setText('service-message', value);
+  $('service-message').hidden = !value;
+}
+
+function refreshService(method) {
+  // Each service panel renders its own actionable error state.
+  if (service) void service[method]().catch(() => {});
+}
+
+function navigate(page) {
+  const selected = ['brew', 'beans', 'journal'].includes(page) ? page : 'brew';
+  for (const name of ['brew', 'beans', 'journal']) $(name + '-page').hidden = name !== selected;
+  document.querySelectorAll('[data-page]').forEach(link => {
+    if (link.dataset.page === selected) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  });
+  if (location.hash !== '#' + selected) history.replaceState(null, '', '#' + selected);
+  if (selected === 'journal') { refreshService('refreshJournal'); void refreshSummary(); }
+  if (selected === 'beans') refreshService('refreshBags');
+}
+
+function renderBagHint() {
+  const bag = service?.getBag($('brew-bag').value);
+  setText('brew-bag-hint', bag ? [bag.tastingNotes,
+    bag.remainingGrams == null ? null : `${Math.round(bag.remainingGrams)} g remaining`,
+    bag.caffeineType !== 'regular' ? bag.caffeineType : null].filter(Boolean).join(' · ')
+    : 'No bag selected. Your brew will still be saved in the journal.');
+}
+
+let summaryRequest = 0;
+async function refreshSummary() {
+  const request = ++summaryRequest;
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  const to = new Date(from);
+  to.setDate(to.getDate() + 1);
+  try {
+    const summary = await api(`/api/summary?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`);
+    if (request !== summaryRequest) return;
+    const container = $('daily-summary');
+    container.replaceChildren();
+    const heading = document.createElement('p');
+    heading.textContent = `${summary.brewsCompleted} completed brew${summary.brewsCompleted === 1 ? '' : 's'} today · ${Number(summary.totalDose).toFixed(1)} g of beans`;
+    container.append(heading);
+    if (!summary.servings.length) {
+      const empty = document.createElement('p');
+      empty.className = 'hint';
+      empty.textContent = 'Log who had a cup in a brew’s results to see the household’s day here.';
+      container.append(empty);
+    }
+    for (const serving of summary.servings) {
+      const row = document.createElement('p');
+      row.className = 'serving-summary';
+      const person = document.createElement('strong');
+      person.textContent = serving.person;
+      const details = document.createElement('span');
+      details.textContent = `${serving.count} serving${serving.count === 1 ? '' : 's'} · ${serving.volumeMl} mL · ${serving.knownCaffeineMg} mg recorded caffeine${serving.unknownCaffeineCount ? ` + ${serving.unknownCaffeineCount} unknown` : ''}`;
+      row.append(person, details);
+      container.append(row);
+    }
+  } catch {
+    if (request !== summaryRequest) return;
+    $('daily-summary').textContent = 'Daily totals are unavailable. Check your connection and refresh.';
+  }
+}
 
 function persist() {
-  $('storage-warning').hidden = saveState({ brewer, doses, notes,
-    session: timer ? { brewer, dose: recipe.dose, timer } : null });
+  $('storage-warning').hidden = saveState({ brewer, doses, notes, temperatureF,
+    session: timer ? { brewer, dose: recipe.dose, timer, brewId, bagId: sessionBagId } : null });
 }
 
 async function syncWakeLock() {
@@ -78,7 +154,7 @@ function renderRecipe(syncDose = true) {
   });
   setText('dose-hint', `${recipe.min}–${recipe.max} g · for ${recipe.name} ${recipe.size}`);
   setText('water', `${recipe.water} g`);
-  setText('temperature', recipe.temperature);
+  setText('temperature', `${temperatureF}°F`);
   setText('grind', notes[brewer] || recipe.grind);
   setText('texture', recipe.texture);
   setText('prep', recipe.prep);
@@ -116,6 +192,7 @@ function renderTimer() {
   $('start').hidden = Boolean(timer);
   $('active-controls').hidden = !active;
   $('reset').hidden = !timer;
+  $('rate-brew').hidden = !finished || !brewId;
   setText('reset', finished ? 'Make another cup' : 'Discard & start over');
   setText('pause', timer?.status === 'paused' ? 'Resume' : 'Pause');
   setText('status', finished ? 'ENJOY' : timer?.status === 'paused' ? 'PAUSED' : timer ? 'BREWING' : 'READY');
@@ -127,7 +204,7 @@ function renderTimer() {
     : index < 0 ? 'Target time reached · finish when the bed has drained'
     : `${formatTime(Math.ceil(step.end - seconds))} left in this step${timer.status === 'paused' ? ' · timer paused' : ''}`);
   setText('instruction-title', finished ? 'Enjoy your coffee.' : !timer ? 'Ready when you are.' : index < 0 ? 'Let the last drops fall.' : step.title);
-  setText('instruction', finished ? 'Swirl your coffee, pour a cup, and take a moment.'
+  setText('instruction', finished ? 'Swirl, sip, and tell your journal how it went. Log a serving for each person who shared the brew.'
     : !timer ? 'Tare your scale. Start the timer as you begin the bloom pour.'
     : index < 0 ? 'No more water. The timer will keep running until you tap Finish brew.' : step.instruction);
   setText('target-label', !timer ? 'FIRST SCALE TARGET' : finished ? 'RECIPE WATER' : step.pouring && index >= 0 ? 'POUR TO · SCALE TARGET' : 'WATER ADDED · TARGET');
@@ -146,15 +223,20 @@ function renderTimer() {
 function updateDose() {
   if (timer) return;
   try {
+    const temperature = $('temperature-f').valueAsNumber;
+    if (!Number.isInteger(temperature) || temperature < 140 || temperature > 212) {
+      throw new Error('Enter a water temperature from 140–212°F in whole degrees.');
+    }
     recipe = createRecipe(brewer, $('dose').valueAsNumber);
+    temperatureF = temperature;
     doses[brewer] = recipe.dose;
     $('dose-error').hidden = true;
     $('dose').setAttribute('aria-invalid', 'false');
     $('start').disabled = false;
     renderRecipe(false);
     persist();
-  } catch {
-    setText('dose-error', `Enter ${BREWERS[brewer].min}–${BREWERS[brewer].max} g in 0.1 g increments.`);
+  } catch (error) {
+    setText('dose-error', error instanceof RangeError ? `Enter ${BREWERS[brewer].min}–${BREWERS[brewer].max} g in 0.1 g increments.` : error.message);
     $('dose-error').hidden = false;
     $('dose').setAttribute('aria-invalid', 'true');
     $('start').disabled = true;
@@ -170,6 +252,8 @@ document.querySelectorAll('[data-brewer]').forEach(button => {
   });
 });
 $('dose').addEventListener('input', updateDose);
+$('temperature-f').addEventListener('input', updateDose);
+$('brew-bag').addEventListener('change', renderBagHint);
 for (const [id, delta] of [['less', -1], ['more', 1]]) {
   $(id).addEventListener('click', () => {
     $('dose').value = Math.round(Math.max(recipe.min, Math.min(recipe.max, ($('dose').valueAsNumber || recipe.dose) + delta)) * 10) / 10;
@@ -183,7 +267,14 @@ $('grind-note').addEventListener('input', () => {
 });
 $('start').addEventListener('click', () => {
   if (timer || $('start').disabled) return;
+  brewId = newId();
+  sessionBagId = $('brew-bag').value || null;
   timer = startTimer();
+  void queueBrew('/api/brews', 'POST', {
+    id: brewId, bagId: sessionBagId, brewer, dose: recipe.dose,
+    temperatureF, grindSetting: notes[brewer] || recipe.grind,
+    startedAt: new Date(timer.startedAt).toISOString(),
+  });
   persist();
   renderTimer();
   void syncWakeLock();
@@ -199,6 +290,9 @@ $('pause').addEventListener('click', () => {
 $('finish').addEventListener('click', () => {
   if (elapsed(timer) / 1000 < recipe.steps.at(-1).start && !confirm('Finish before all scheduled pours are complete?')) return;
   timer = { ...pauseTimer(timer), status: 'finished' };
+  if (brewId) terminalSave = queueBrew(`/api/brews/${brewId}`, 'PATCH', {
+    status: 'completed', elapsedSeconds: Math.min(86400, Math.round(elapsed(timer) / 1000)), finishedAt: new Date().toISOString(),
+  });
   persist();
   renderTimer();
   void syncWakeLock();
@@ -206,11 +300,59 @@ $('finish').addEventListener('click', () => {
 });
 $('reset').addEventListener('click', () => {
   if (timer.status !== 'finished' && !confirm('Discard this timer and start over?')) return;
+  if (timer.status !== 'finished' && brewId) void queueBrew(`/api/brews/${brewId}`, 'PATCH', {
+    status: 'discarded', elapsedSeconds: Math.min(86400, Math.round(elapsed(timer) / 1000)), finishedAt: new Date().toISOString(),
+  });
   timer = null;
+  brewId = null;
+  sessionBagId = null;
   persist();
   renderTimer();
   void syncWakeLock();
   $('dose').focus();
+  refreshService('refreshBags');
+});
+$('rate-brew').addEventListener('click', async () => {
+  const targetId = brewId;
+  $('rate-brew').disabled = true;
+  try {
+    await terminalSave;
+    if (await flushBrews()) {
+      if (service && targetId) { navigate('journal'); await service.showResults(targetId); }
+    } else message('This brew is queued on this device. Reconnect and retry sync before adding results.');
+  } catch (error) { message(`Could not open results: ${error.message}`); }
+  finally { $('rate-brew').disabled = false; }
+});
+$('retry-sync').addEventListener('click', () => { void flushBrews(); });
+$('resolve-sync').addEventListener('click', async () => {
+  if (!confirm('A brew was already closed in the journal, possibly on another device. Keep the server’s saved result and remove the conflicting local update?')) return;
+  const accepted = await acceptServerVersions();
+  if (accepted.some(conflict => conflict.brewId === brewId)) {
+    timer = null;
+    brewId = null;
+    sessionBagId = null;
+    persist();
+    renderTimer();
+    void syncWakeLock();
+  }
+  message('Kept the saved journal record. Other brew updates can continue syncing.');
+});
+$('refresh-summary').addEventListener('click', () => { void refreshSummary(); });
+window.addEventListener('hashchange', () => navigate(location.hash.slice(1)));
+document.querySelectorAll('[data-page]').forEach(link => link.addEventListener('click', () => navigate(link.dataset.page)));
+let previousPending = 0;
+watchSync(({ pending, syncing, error, durable, conflicts }) => {
+  setText('sync-text', pending ? `${pending} brew update${pending === 1 ? '' : 's'} ${syncing ? 'syncing…' : 'waiting to sync'}${error && !syncing ? ` · ${error}` : ''}${!durable ? ' · keep this page open; browser storage is unavailable' : ''}`
+    : 'Brew journal · automatically saved as you brew');
+  $('sync-notice').classList.toggle('pending', pending > 0);
+  $('retry-sync').hidden = pending === 0 || syncing;
+  $('resolve-sync').hidden = conflicts.length === 0 || syncing;
+  if (previousPending > 0 && pending === 0) {
+    refreshService('refreshAll');
+    void refreshSummary();
+    message('Brew saved to your journal.');
+  }
+  previousPending = pending;
 });
 document.addEventListener('visibilitychange', () => {
   renderTimer();
@@ -218,5 +360,35 @@ document.addEventListener('visibilitychange', () => {
 });
 renderRecipe();
 persist();
+if (timer && !brewId) message('This timer predates journal tracking. Finish or discard it; your next brew will be recorded automatically.');
 void syncWakeLock();
 setInterval(() => { if (timer?.status === 'running') renderTimer(); }, 200);
+navigate(location.hash.slice(1));
+service = await initService({
+  getActiveBrewId: () => timer && timer.status !== 'finished' ? brewId : null,
+  onNavigate: navigate,
+  onBagsChanged: renderBagHint,
+  onServiceChange: refreshSummary,
+  onBrewAgain: brew => {
+    if (timer) {
+      message('Finish or discard the current timer, then choose Make another cup before repeating a brew.');
+      navigate('brew');
+      return;
+    }
+    brewer = brew.brewer;
+    doses[brewer] = brew.dose;
+    notes[brewer] = brew.grindSetting;
+    temperatureF = brew.temperatureF;
+    $('temperature-f').value = temperatureF;
+    $('dose').value = brew.dose;
+    updateDose();
+    const bag = service.getBag(brew.bagId);
+    service.setSelectedBag(bag && !bag.archived ? brew.bagId : null);
+    renderBagHint();
+    message(bag?.archived ? 'Recipe loaded. That bag is archived; choose an active bag before brewing.' : 'Recipe loaded. Tare your scale when you’re ready.');
+    navigate('brew');
+  },
+});
+if (timer) service.setSelectedBag(sessionBagId);
+renderBagHint();
+void flushBrews();

@@ -2,6 +2,9 @@ services:
   coffee:
     image: ${COFFEE_IMAGE:-ghcr.io/jfmyers9/coffee:latest}
     restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to your PostgreSQL connection string}
+      APP_ORIGIN: ${APP_ORIGIN:-}
     ports:
       - "127.0.0.1:8080:8080"
     read_only: true

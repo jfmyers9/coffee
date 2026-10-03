@@ -19,6 +19,17 @@ jobs:
     name: Unit and browser tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: coffee
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: coffee
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U coffee" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://coffee:ci-only-password@127.0.0.1:5432/coffee
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -36,6 +47,17 @@ jobs:
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: coffee
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: coffee
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U coffee" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://coffee:ci-only-password@127.0.0.1:5432/coffee
     permissions:
       contents: read
       packages: write
@@ -58,12 +80,14 @@ jobs:
         run: |
           docker compose config --quiet
           docker run -d --name coffee-smoke --read-only --cap-drop ALL \
-            --security-opt no-new-privileges:true -p 127.0.0.1:8080:8080 coffee:smoke
+            --security-opt no-new-privileges:true --network host \
+            -e DATABASE_URL="$DATABASE_URL" coffee:smoke
           trap 'docker logs coffee-smoke; docker rm -f coffee-smoke' EXIT
-          # Docker's port proxy may reset connections before Node is listening.
+          # Startup includes migrations; tolerate transient readiness failures.
           curl --fail --silent --show-error --max-time 3 --retry 10 \
             --retry-all-errors --retry-delay 1 --retry-max-time 30 http://127.0.0.1:8080/health
           curl --fail http://127.0.0.1:8080/ | grep -q 'Morning Coffee'
+          curl --fail --silent http://127.0.0.1:8080/api/bags | grep -q 'defaultBagId'
           test "$(docker exec coffee-smoke id -u)" != '0'
       - name: Image metadata
         id: meta

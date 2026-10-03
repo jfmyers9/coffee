@@ -1,21 +1,40 @@
 # Morning Coffee
 
-A mobile-first, prescriptive coffee helper for V60 and Chemex, with Baratza Encore starting settings. Choose a bean weight, prep your brewer, and follow timed pours with **cumulative scale targets** and grams-per-second guidance.
+A shared, mobile-first coffee service for your household. Keep a bean shelf, follow V60 or Chemex pours, and remember how each cup turned out. Postgres stores bags, photos, brew history, and results; Tailscale keeps it private.
+
+## The experience
+
+- **Bean shelf:** roaster, coffee name, origin, process, variety, roast, tasting notes, purchase/roast/open dates, price, regular/decaf/half-caf, and a bag photo. A newly added bag becomes the default. Archive empty bags without losing history.
+- **Guided brewing:** choose beans and grams, get cumulative water targets, bloom/rest timing, Encore starting settings, and a temperature in **°F**. The timer survives reloads and attempts to keep the screen awake.
+- **Automatic journal:** starting a timer records a brew. Finish or discard updates it automatically. Retrying a request never creates a second brew or double-counts beans. Recipe and coffee-name snapshots preserve what you used even if the bag is later edited.
+- **Results:** optional 1–5 rating, taste, notes, actual water added, and individual household servings with milk choice. Repeat a past brew without manually copying its settings.
+- **Shared cups:** today's completed brews and servings across the database, including entered caffeine amounts and explicitly unknown amounts. The day uses the viewing device's local time zone.
+- **Inventory:** original bag weight minus coffee used by all started brews, including discarded brews. This is an estimate; it doesn't account for spills or coffee used outside the app. Negative inventory is shown rather than silently hiding a discrepancy.
+
+### Caffeine and breastfeeding
+
+The app **does not calculate a safe bean dose or infer caffeine from coffee grams**. Caffeine varies substantially with beans and brewing; decaf is not caffeine-free. Enter a caffeine amount only when you have an appropriate source. Blank means unknown, never zero. Daily totals include only logged servings, not other caffeine sources. Ask a clinician about breastfeeding guidance appropriate to your household. Serving volume is the coffee actually consumed, not brew water or beverage yield.
 
 ## Run locally
 
-Requires Node.js 22 or newer. No runtime dependencies or build step.
+Requires Node.js 22+ and PostgreSQL 14+. No frontend build step. The only runtime dependency is `pg`.
 
 ```sh
+npm ci
+export DATABASE_URL='postgresql://coffee:YOUR_PASSWORD@127.0.0.1:5432/coffee'
 npm start
 # http://127.0.0.1:8080
 ```
 
+Use a dedicated database and login that can create tables in its schema. On startup the app applies numbered migrations atomically under a database advisory lock; it will not listen if the database is unavailable or migrations fail. `/health` checks the database connection. Restarting the service preserves all server records and photos.
+
 ## Docker + Tailscale
 
-On a Docker host already connected to your tailnet:
+On a Docker host already connected to your tailnet, with an existing Postgres server reachable **from the container**:
 
 ```sh
+cp .env.example .env
+# Edit DATABASE_URL and APP_ORIGIN in .env before continuing.
 docker compose pull
 docker compose up -d
 curl http://127.0.0.1:8080/health
@@ -24,11 +43,17 @@ tailscale serve --bg http://127.0.0.1:8080
 
 Open the HTTPS address printed by Tailscale Serve from your phone with Tailscale connected. Serve may prompt you to enable HTTPS for your tailnet. If Serve already hosts other apps, integrate this upstream into your existing routing rather than replacing it. This app expects to be hosted at the root of its own origin, not a URL subpath.
 
-Compose binds only to localhost; Tailscale Serve provides tailnet-only HTTPS. **Do not use Tailscale Funnel** (public access). There is no app authentication: restrict access using your tailnet ACLs/grants. Nothing here installs or configures Tailscale automatically. HTTPS also enables screen wake lock on supported mobile browsers. The app has no third-party fonts, analytics, APIs, or network dependencies at runtime.
+`DATABASE_URL` is required. Use the Postgres server's hostname/IP reachable from Docker, not `localhost` (which means the app container). URL-encode special characters in the password. Restrict Postgres network access to the app and your administration machines; use TLS with certificate validation when required by your network. Do not commit `.env` or connection credentials.
+
+`APP_ORIGIN` should be the exact browser-facing HTTPS origin, e.g. `https://coffee.example.ts.net`, **without a trailing slash**. It protects against cross-origin browser writes and works when a proxy rewrites the Host header. If omitted, request Origin must match request Host. Forwarded host headers are deliberately not trusted. This check is not authentication.
+
+**Upgrading from the original timer-only app:** configure `DATABASE_URL` before pulling the new image. Browser preferences are retained; old local timers are not retroactively imported into the journal. New brews are recorded automatically. Take a database backup before future upgrades, and pin a known image tag/digest when rollback control matters.
+
+Compose binds only to localhost; Tailscale Serve provides tailnet-only HTTPS. **Do not use Tailscale Funnel** (public access). This is one shared household with **no app authentication or separate user accounts**: anyone who can reach it can read and edit its records. Restrict access using your tailnet ACLs/grants. Nothing here installs or configures Tailscale automatically. HTTPS also enables screen wake lock on supported mobile browsers. No third-party fonts, analytics, or external image requests are used.
 
 ### Image publishing
 
-[GitHub Actions](https://github.com/jfmyers9/coffee/actions) runs unit and browser tests, builds the container, smoke-tests it as a non-root user with a read-only filesystem, then publishes **`ghcr.io/jfmyers9/coffee`** for `linux/amd64` and `linux/arm64` with provenance and an SBOM.
+[GitHub Actions](https://github.com/jfmyers9/coffee/actions) runs unit, real-Postgres API, and browser tests, builds the container, smoke-tests it against Postgres as a non-root user with a read-only filesystem, then publishes **`ghcr.io/jfmyers9/coffee`** for `linux/amd64` and `linux/arm64` with provenance and an SBOM.
 
 - Push to `main`: publishes `latest`, `main`, and `sha-<full commit SHA>`.
 - Push a version tag such as `v0.1.0`: publishes `0.1.0` and a commit tag. Version tags do not move `latest`.
@@ -56,7 +81,7 @@ COFFEE_IMAGE=coffee:local docker compose up -d --pull never
 | Supported dose | 12–30 g | 20–45 g |
 | Water | 16 × coffee weight | 16 × coffee weight |
 | Original Encore starting dial | 15 | 20 |
-| Temperature | 94–96°C | 94–96°C |
+| Temperature | 203°F default (editable) | 203°F default (editable) |
 | Bloom | 3 × coffee weight, pour for 15s; rest until 0:45 | Same |
 | Remaining water | Three equal pours, 25s each, with 20s rests | Three equal pours, 35s each, with 20s rests |
 | Target total time | 3:30 | 4:30 |
@@ -65,22 +90,32 @@ These are opinionated starting recipes for medium-roast beans, not manufacturer-
 
 Water targets mean **water added**, not beverage yield. Tare once before brewing; don't tare between pours. Pour rates are suggested averages, not measurements. Never overflow the brewer to keep up with the timer: pause the guide if the bed is full. The timer does not auto-finish at the target drawdown time; tap Finish brew when draining is done.
 
-## State and limitations
+## Persistence, backup, and limits
 
-- Preferences and the current brew are saved in this browser's local storage, not on the server; no cross-device sync or history yet.
+- Bags, photos, the default bag, brew history, recipe snapshots, and results live in Postgres and are shared across devices. Personal recipe input preferences and active timer controls remain browser-local; you cannot take over a running timer on another phone. Refresh/navigate to see another device's changes.
+- Automatic brew start/finish/discard events use a persistent browser outbox. If the network drops, keep the browser data: updates retry on reconnect, every 15 seconds, and via **Retry sync**. UUID-based idempotency avoids double records after a lost response. Unsynced events are not yet in the database and clearing browser data loses them.
+- Brew timestamps and entered parameters retain the original local values when replayed. If the first save was offline, the coffee-name/recipe snapshot is taken when Postgres receives it; edits to the bag made before that first sync may appear in the snapshot.
+- Bean and result forms require a successful server save; they show errors and preserve form input when a save fails. They are not an offline editing system.
+- If another device closes a brew first, a conflicting local status change is retained for review. **Use saved journal version** explicitly keeps the server record and removes the conflicting local event. Other brews can still sync independently.
 - Elapsed time uses timestamps rather than counting ticks, so reloads and background tabs catch up correctly. Pauses freeze the guide. Avoid changing the device clock mid-brew.
 - Best-effort screen wake lock while running; mobile OS restrictions may still suspend the page. No background audio/notifications or offline service worker. Keep the page visible.
-- Use one tab per brew. Multiple tabs don't coordinate their timers.
+- Use one tab per brew. Web Locks protect outbox writes across tabs where supported, but live timer controls are not coordinated between tabs.
 - Recipe settings are locked during a brew. Discard or finish and choose Make another cup to change them.
+- Photos are resized in the browser to at most 1200 pixels and re-encoded as JPEG, removing source metadata. The server accepts JPEG/PNG/WebP signatures with a 2 MB decoded limit and stores bytes in Postgres, so no writable upload volume is required. Phone formats the browser cannot decode (such as some HEIC files) need conversion first.
+
+Back up the dedicated database using your normal Postgres backup process, e.g. `pg_dump --format=custom --file=coffee.dump "$DATABASE_URL"`; this includes photos and migration history. Test restoring to a separate database with `pg_restore`. Protect backups: they contain household consumption data and uploaded photos. The journal's **Export all data** downloads readable JSON metadata/history for portability, but excludes photo bytes and is **not a full backup or automatic import format**.
 
 ## Development and checks
 
 ```sh
 npm ci
 npx playwright install chromium webkit
+export TEST_DATABASE_URL='postgresql://coffee_test:TEST_PASSWORD@127.0.0.1:5432/coffee_test'
 npm run check
 ```
 
-`npm test` covers recipe arithmetic, every supported dose, phase boundaries, and timer state. `npm run test:e2e` exercises desktop Chromium and mobile WebKit, persistence, validation, pause/resume, reload recovery, completion, narrow layouts, and server routes.
+Use a disposable test database whose role can create schemas. API tests and the browser test server each create and clean up uniquely named schemas; they never truncate the app's tables. You may set a separate `BROWSER_DATABASE_URL` for Playwright. Without `TEST_DATABASE_URL`, `npm test` skips the API suite; a full verification requires the variable and Postgres. Browser tests require one of those test connection variables.
 
-Structure: `public/recipe.js` owns recipe generation; `public/timer.js` owns clock transitions; `public/app.js` connects them to the DOM; `public/storage.js` handles persistence. `server.js` serves a fixed set of static assets and a health endpoint. Future recipe customization can grow from the recipe module without adding a backend prematurely.
+`npm test` covers recipe arithmetic, supported doses, timer state, validation, concurrency/idempotency, immutable snapshots, photo storage, database reconnection/persistence, daily totals, and origin protection. Browser checks exercise desktop Chromium and mobile WebKit: bean creation/photo, defaults/archive, automatic recording, ratings/shared servings, journal replay, lost responses, reload recovery, conflicts, and narrow layouts.
+
+Structure: `public/recipe.js` owns recipe generation; `public/timer.js` owns clock transitions; `public/app.js` integrates brewing; `public/service.js` owns the bean shelf/journal; `public/sync.js` handles queued brew events. `server.js` serves fixed assets and the JSON API, `server/api.js` owns transactional operations, `server/validation.js` validates inputs, and `server/db.js` applies `migrations/*.sql`. No external services beyond your Postgres server are needed.

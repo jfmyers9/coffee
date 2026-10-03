@@ -6,3 +6,4 @@ tests
 .env
 .env.*
 .github
+features.md

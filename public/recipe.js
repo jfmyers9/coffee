@@ -2,14 +2,14 @@ export const BREWERS = {
   v60: {
     name: 'V60', size: '02', min: 12, max: 30, dose: 20, ratio: 16,
     grind: 'Encore · 15', texture: 'Start medium-fine, a little finer than table salt. Original Encore, not ESP. Adjust to taste; calibration varies.',
-    temperature: '94–96°C', bloomEnd: 45, pourSeconds: 25, restSeconds: 20,
+    temperature: '201–205°F', bloomEnd: 45, pourSeconds: 25, restSeconds: 20,
     finish: 210,
     prep: 'Rinse the filter, warm the brewer, then discard the rinse water. Add grounds and make a small well in the center.',
   },
   chemex: {
     name: 'Chemex', size: '6–8 cup', min: 20, max: 45, dose: 30, ratio: 16,
     grind: 'Encore · 20', texture: 'Start medium-coarse, like coarse sand. Original Encore, not ESP. Adjust to taste; calibration varies.',
-    temperature: '94–96°C', bloomEnd: 45, pourSeconds: 35, restSeconds: 20,
+    temperature: '201–205°F', bloomEnd: 45, pourSeconds: 35, restSeconds: 20,
     finish: 270,
     prep: 'Place the three-layer side of the filter against the spout. Rinse, discard the rinse water, and add your grounds.',
   },

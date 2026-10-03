@@ -32,7 +32,7 @@ test('invalid doses cannot start and decimal typing works', async ({ page }) => 
 });
 
 test('guided brew transitions, pauses, restores and finishes', async ({ page }) => {
-  await page.clock.install();
+  await page.clock.install({ time: new Date(Date.now() - 10 * 60 * 1000) });
   await page.goto('/');
   await page.getByRole('button', { name: 'Start brewing' }).click();
   await expect(page.locator('#instruction-title')).toHaveText('Bloom');

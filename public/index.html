@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f6f2e9">
-  <meta name="description" content="A quieter morning. Simple, guided V60 and Chemex recipes.">
+  <meta name="description" content="Your coffee shelf, guided morning ritual, and shared brew journal.">
   <title>Morning Coffee</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
@@ -12,14 +12,22 @@
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <header class="masthead"><a href="/" aria-label="Morning Coffee home"><img src="/icon.svg" width="32" height="32" alt=""> morning coffee<span class="brand-dot">.</span></a><span class="small-label">ONE GOOD CUP</span></header>
+  <header class="masthead"><a href="#brew" aria-label="Morning Coffee home"><img src="/icon.svg" width="32" height="32" alt=""> morning coffee<span class="brand-dot">.</span></a><span class="small-label">A HOUSEHOLD RITUAL</span></header>
+  <nav class="main-nav" aria-label="Main navigation"><a href="#brew" data-page="brew" aria-current="page">Brew</a><a href="#beans" data-page="beans">Bean shelf</a><a href="#journal" data-page="journal">Journal</a></nav>
   <main>
+    <p id="service-message" class="notice" role="status" hidden></p>
+    <aside id="sync-notice" class="sync-notice" aria-label="Brew sync status"><span id="sync-text" role="status">Connecting to your journal…</span><button id="retry-sync" class="text-button" hidden>Retry sync</button><button id="resolve-sync" class="text-button" hidden>Use saved journal version</button></aside>
+    <section id="brew-page" aria-label="Brew coffee">
     <section class="intro"><p class="eyebrow">YOUR MORNING, SIMPLIFIED</p><h1>A little ritual.<br>A better morning.</h1><p>Good coffee. No mental math.</p></section>
     <div class="layout">
       <section class="card setup" aria-labelledby="setup-heading">
         <div class="section-heading"><span class="number">01</span><h2 id="setup-heading">Make it yours</h2></div>
         <fieldset id="settings">
           <legend class="sr-only">Recipe settings</legend>
+          <label class="field-label" for="brew-bag">On the counter</label>
+          <select id="brew-bag"><option value="">No bag selected</option></select>
+          <p id="brew-bag-hint" class="hint">Choose a bag to connect this brew to your bean shelf.</p>
+          <a class="inline-link" href="#beans">Add a new bag →</a>
           <p class="field-label" id="brewer-label">Your brewer</p>
           <div class="brewers" role="group" aria-labelledby="brewer-label">
             <button type="button" data-brewer="v60" aria-pressed="true"><span class="brewer-icon" aria-hidden="true">▽</span><strong>V60</strong><small>A clean, bright cup</small></button>
@@ -28,6 +36,9 @@
           <label class="field-label" for="dose">Coffee beans</label>
           <div class="dose-control"><button type="button" id="less" aria-label="Use fewer beans">−</button><div><input id="dose" type="number" inputmode="decimal" min="12" max="30" step="0.1" value="20" aria-describedby="dose-hint dose-error"><span>g</span></div><button type="button" id="more" aria-label="Use more beans">+</button></div>
           <p id="dose-hint" class="hint"></p><p id="dose-error" class="error" role="alert" hidden></p>
+          <label class="field-label" for="temperature-f">Water temperature (°F)</label>
+          <input id="temperature-f" type="number" min="140" max="212" step="1" value="203" inputmode="numeric" aria-describedby="temperature-hint">
+          <p class="hint" id="temperature-hint">Start at 203°F. Use cooler water for darker roasts.</p>
           <div class="recipe-stats"><div><span class="small-label">WATER</span><strong id="water"></strong></div><div><span class="small-label">RATIO</span><strong>1 : 16</strong></div><div><span class="small-label">TEMPERATURE</span><strong id="temperature"></strong></div></div>
           <div class="grind"><span aria-hidden="true">✳</span><div><span class="small-label">GRIND GUIDE</span><h3 id="grind"></h3><p id="texture"></p></div></div>
           <details><summary>Your grinder setting <span>optional</span></summary><label for="grind-note">Save a dial setting for this brewer</label><input id="grind-note" type="text" maxlength="80" placeholder="e.g. grinder model · dial setting"><p class="hint">Settings vary by grinder and beans. Saved only in this browser.</p></details>
@@ -47,6 +58,7 @@
           <button class="primary" id="start">Start brewing <span aria-hidden="true">→</span></button>
           <div class="active-controls" id="active-controls" hidden><button id="pause" class="primary">Pause</button><button id="finish" class="secondary">Finish brew</button></div>
           <button id="reset" class="text-button" hidden>Discard &amp; start over</button>
+          <button id="rate-brew" class="secondary" hidden>Rate this cup &amp; log servings</button>
           <p id="wake-message" class="hint">Keep this page open while brewing.</p>
         </div>
         <div class="timeline-header"><h3>The recipe</h3><span id="duration" class="hint"></span></div>
@@ -54,6 +66,16 @@
         <p class="recipe-note">A starting point for medium-roast coffee. Times guide your pours, not the actual flow through your brewer. If the bed is full, pause and let it drain.</p>
       </section>
     </div>
+    </section>
+    <section id="beans-page" aria-labelledby="beans-heading" hidden>
+      <div class="intro"><p class="eyebrow">GOOD MORNINGS START HERE</p><h1 id="beans-heading">The bean shelf.</h1><p>Remember the bags you love. Find your next great cup.</p></div>
+      <div id="beans-content"></div>
+    </section>
+    <section id="journal-page" aria-labelledby="journal-heading" hidden>
+      <div class="intro"><p class="eyebrow">A LITTLE BETTER, EVERY DAY</p><h1 id="journal-heading">Your coffee journal.</h1><p>Every brew has a story. Keep the good ones close.</p></div>
+      <aside class="card daily-summary"><div class="timeline-header"><h2>Today's shared cups</h2><button id="refresh-summary" class="text-button">Refresh</button></div><div id="daily-summary"><p class="hint">Loading today's cups…</p></div><p class="hint">Amounts are recorded servings, not a caffeine measurement. Unknown caffeine is never counted as zero. Bean weight, roast, and “decaf” cannot establish a safe caffeine dose while breastfeeding. Ask your clinician about your circumstances and include other caffeine sources.</p></aside>
+      <div id="journal-content"></div>
+    </section>
     <p id="storage-warning" class="error" role="status" hidden>Browser storage is unavailable. This brew works, but your settings and timer won't survive a reload.</p>
     <footer>Less thinking. More sipping.<span>Made for your morning.</span></footer>
   </main>
