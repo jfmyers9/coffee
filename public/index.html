@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f2e9">
+  <meta name="description" content="A quieter morning. Simple, guided V60 and Chemex recipes.">
+  <title>Morning Coffee</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="masthead"><a href="/" aria-label="Morning Coffee home"><img src="/icon.svg" width="32" height="32" alt=""> morning coffee<span class="brand-dot">.</span></a><span class="small-label">ONE GOOD CUP</span></header>
+  <main>
+    <section class="intro"><p class="eyebrow">YOUR MORNING, SIMPLIFIED</p><h1>A little ritual.<br>A better morning.</h1><p>Good coffee. No mental math.</p></section>
+    <div class="layout">
+      <section class="card setup" aria-labelledby="setup-heading">
+        <div class="section-heading"><span class="number">01</span><h2 id="setup-heading">Make it yours</h2></div>
+        <fieldset id="settings">
+          <legend class="sr-only">Recipe settings</legend>
+          <p class="field-label" id="brewer-label">Your brewer</p>
+          <div class="brewers" role="group" aria-labelledby="brewer-label">
+            <button type="button" data-brewer="v60" aria-pressed="true"><span class="brewer-icon" aria-hidden="true">▽</span><strong>V60</strong><small>A clean, bright cup</small></button>
+            <button type="button" data-brewer="chemex" aria-pressed="false"><span class="brewer-icon" aria-hidden="true">⋈</span><strong>Chemex</strong><small>Smooth &amp; easygoing</small></button>
+          </div>
+          <label class="field-label" for="dose">Coffee beans</label>
+          <div class="dose-control"><button type="button" id="less" aria-label="Use fewer beans">−</button><div><input id="dose" type="number" inputmode="decimal" min="12" max="30" step="0.1" value="20" aria-describedby="dose-hint dose-error"><span>g</span></div><button type="button" id="more" aria-label="Use more beans">+</button></div>
+          <p id="dose-hint" class="hint"></p><p id="dose-error" class="error" role="alert" hidden></p>
+          <div class="recipe-stats"><div><span class="small-label">WATER</span><strong id="water"></strong></div><div><span class="small-label">RATIO</span><strong>1 : 16</strong></div><div><span class="small-label">TEMPERATURE</span><strong id="temperature"></strong></div></div>
+          <div class="grind"><span aria-hidden="true">✳</span><div><span class="small-label">GRIND GUIDE</span><h3 id="grind"></h3><p id="texture"></p></div></div>
+          <details><summary>Your grinder setting <span>optional</span></summary><label for="grind-note">Save a dial setting for this brewer</label><input id="grind-note" type="text" maxlength="80" placeholder="e.g. grinder model · dial setting"><p class="hint">Settings vary by grinder and beans. Saved only in this browser.</p></details>
+        </fieldset>
+        <div class="prep"><h3>Before you begin</h3><p id="prep"></p><p>Heat your water, put the brewer on your scale, and tare to zero. Keep the cumulative water weight on the scale—don't tare between pours.</p></div>
+      </section>
+      <section class="card brew" aria-labelledby="brew-heading">
+        <div class="section-heading"><span class="number">02</span><h2 id="brew-heading">Find your flow</h2><span id="status" class="badge">READY</span></div>
+        <div class="timer-panel">
+          <p id="phase-label" class="eyebrow">A MOMENT TO SLOW DOWN</p>
+          <div id="clock" class="clock" role="timer" aria-label="Elapsed brew time">0:00</div>
+          <p id="timing" class="hint"></p>
+          <h3 id="instruction-title" aria-live="polite">Ready when you are.</h3>
+          <p id="instruction"></p>
+          <div class="pour-target"><div><span id="target-label" class="small-label">FIRST SCALE TARGET</span><strong id="target"></strong></div><div><span class="small-label" id="rate-label">POUR RATE</span><strong id="rate"></strong></div></div>
+          <progress id="progress" value="0" max="100" aria-label="Brew progress"></progress>
+          <button class="primary" id="start">Start brewing <span aria-hidden="true">→</span></button>
+          <div class="active-controls" id="active-controls" hidden><button id="pause" class="primary">Pause</button><button id="finish" class="secondary">Finish brew</button></div>
+          <button id="reset" class="text-button" hidden>Discard &amp; start over</button>
+          <p id="wake-message" class="hint">Keep this page open while brewing.</p>
+        </div>
+        <div class="timeline-header"><h3>The recipe</h3><span id="duration" class="hint"></span></div>
+        <ol id="timeline" class="timeline"></ol>
+        <p class="recipe-note">A starting point for medium-roast coffee. Times guide your pours, not the actual flow through your brewer. If the bed is full, pause and let it drain.</p>
+      </section>
+    </div>
+    <p id="storage-warning" class="error" role="status" hidden>Browser storage is unavailable. This brew works, but your settings and timer won't survive a reload.</p>
+    <footer>Less thinking. More sipping.<span>Made for your morning.</span></footer>
+  </main>
+  <noscript>This coffee timer needs JavaScript enabled.</noscript>
+</body>
+</html>

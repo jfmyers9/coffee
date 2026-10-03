@@ -1,0 +1,117 @@
+:root { color-scheme: light; --paper: #f6f2e9; --card: #fffcf7; --ink: #243e36; --muted: #687168; --line: #e1e2d8; --sage: #e9eee3; --accent: #a65f39; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; touch-action: manipulation; }
+button:disabled { cursor: default; opacity: .55; }
+button, input { border: 1px solid var(--line); border-radius: 12px; }
+button:hover:not(:disabled) { filter: brightness(.96); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+[hidden] { display: none !important; }
+p { line-height: 1.6; }
+h1, h2, h3, p { margin-top: 0; }
+h2 { font-size: 20px; font-weight: 600; margin: 0; }
+h3 { font-size: 16px; margin-bottom: 8px; }
+.masthead { max-width: 1160px; margin: auto; padding: 28px 32px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); }
+.masthead a { display: flex; align-items: center; color: inherit; text-decoration: none; font-size: 21px; font-weight: 650; letter-spacing: -.8px; }
+.masthead img { margin-right: 10px; }
+.brand-dot { color: var(--accent); }
+main { max-width: 1100px; padding: 0 24px; margin: auto; }
+.intro { padding: 52px 0 36px; }
+.eyebrow, .small-label { font-size: 10px; font-weight: 650; letter-spacing: 1.5px; }
+.eyebrow { color: var(--accent); margin-bottom: 16px; }
+h1 { font: 52px/1.07 Georgia, serif; letter-spacing: -1.8px; margin-bottom: 16px; }
+.intro > p:last-child { color: var(--muted); font-size: 16px; margin-bottom: 0; }
+.layout { display: grid; grid-template-columns: 1fr 1.1fr; align-items: start; gap: 24px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 28px; box-shadow: 0 4px 20px #243e3604; min-width: 0; }
+.section-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; scroll-margin-top: 20px; }
+.number { font: italic 16px Georgia, serif; color: var(--accent); }
+.badge { margin-left: auto; font-size: 9px; font-weight: 650; letter-spacing: 1px; background: var(--sage); border-radius: 20px; padding: 7px 10px; }
+fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
+.field-label { display: block; font-size: 13px; font-weight: 600; margin: 0 0 12px; }
+.brewers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 26px; }
+.brewers button { background: transparent; display: flex; flex-direction: column; align-items: start; padding: 15px; border-radius: 14px; text-align: left; }
+.brewers button[aria-pressed="true"] { border-color: var(--ink); background: var(--sage); box-shadow: inset 0 0 0 1px var(--ink); }
+.brewer-icon { font: 38px/1 Georgia, serif; height: 44px; }
+.brewers strong { margin-top: 10px; font-size: 16px; }
+.brewers small { color: var(--muted); font-size: 11px; margin-top: 5px; }
+.dose-control { display: flex; justify-content: space-between; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 14px; }
+.dose-control button { width: 46px; height: 46px; background: var(--paper); border: 0; font-size: 24px; }
+.dose-control input { width: 100px; text-align: center; font-size: 32px; font-weight: 500; background: transparent; border: 0; padding: 4px 0; appearance: textfield; }
+.dose-control input::-webkit-inner-spin-button { appearance: none; }
+.dose-control > div > span { color: var(--muted); }
+.hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
+#dose-hint { margin: 10px 0 24px; }
+.error { color: #a02e21; font-size: 13px; }
+.recipe-stats { display: grid; grid-template-columns: 1fr .8fr 1.2fr; gap: 8px; padding: 22px 0; border-block: 1px solid var(--line); }
+.small-label { display: block; color: var(--muted); font-size: 9px; letter-spacing: 1px; }
+.recipe-stats strong { display: block; font-size: 19px; margin-top: 8px; font-weight: 550; }
+.grind { display: flex; gap: 14px; padding: 24px 0 16px; }
+.grind > span { color: var(--accent); font-size: 28px; }
+.grind h3 { margin: 7px 0; font-size: 19px; overflow-wrap: anywhere; }
+.grind p { font-size: 13px; color: var(--muted); margin-bottom: 0; }
+details { border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
+summary { cursor: pointer; min-height: 44px; padding-block: 8px; }
+summary span { float: right; color: var(--muted); font-size: 11px; padding: 2px; }
+details label { display: block; margin-bottom: 10px; }
+details input { width: 100%; padding: 12px; background: var(--card); font-size: 16px; }
+details .hint { margin-top: 8px; }
+.prep { margin-top: 24px; padding: 20px; background: var(--paper); border-radius: 14px; }
+.prep p { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.prep p:last-child { margin-bottom: 0; }
+.timer-panel { text-align: center; background: var(--sage); border-radius: 16px; padding: 24px; }
+.timer-panel .eyebrow { font-size: 9px; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 8px; }
+.clock { font-size: 76px; line-height: 1.12; letter-spacing: -4px; font-weight: 400; font-variant-numeric: tabular-nums; }
+#timing { margin: 8px 0 22px; min-height: 18px; }
+#instruction-title { font: 25px/1.2 Georgia, serif; margin-bottom: 8px; }
+#instruction { font-size: 13px; color: #536456; min-height: 42px; margin-bottom: 20px; }
+.pour-target { display: grid; grid-template-columns: 1.1fr 1fr; gap: 10px; padding: 16px 0; border-top: 1px solid #d3ddce; }
+.pour-target > div + div { border-left: 1px solid #d3ddce; }
+.pour-target strong { display: block; font-size: 26px; margin-top: 7px; font-weight: 500; }
+progress { display: block; width: 100%; height: 4px; border: 0; border-radius: 5px; margin-bottom: 22px; background: #d3ddce; accent-color: var(--ink); }
+progress::-webkit-progress-bar { background: #d3ddce; border-radius: 5px; }
+progress::-webkit-progress-value { background: var(--ink); border-radius: 5px; }
+progress::-moz-progress-bar { background: var(--ink); }
+.primary, .secondary { min-height: 52px; padding: 12px 18px; font-weight: 550; font-size: 14px; }
+.primary { background: var(--ink); color: #fffdf7; border-color: var(--ink); }
+#start { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+.secondary { background: transparent; border-color: #afbbab; }
+.active-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.text-button { background: transparent; border: 0; text-decoration: underline; font-size: 12px; min-height: 44px; margin-top: 8px; }
+#wake-message { font-size: 10px; margin: 14px 0 0; }
+.timeline-header { display: flex; justify-content: space-between; align-items: center; margin-top: 28px; }
+.timeline-header h3 { margin: 0; }
+.timeline { list-style: none; padding: 0; margin: 12px 0 0; }
+.timeline li { display: flex; gap: 14px; align-items: center; padding: 13px 8px; border-bottom: 1px solid var(--line); border-radius: 6px; }
+.step-time { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); width: 30px; flex-shrink: 0; }
+.timeline strong { font-size: 13px; font-weight: 550; }
+.timeline small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.step-target { margin-left: auto; font-size: 12px; white-space: nowrap; }
+.timeline .current { background: var(--sage); box-shadow: inset 3px 0 var(--ink); }
+.timeline .complete .step-time { color: var(--accent); }
+.recipe-note { font-size: 11px; line-height: 1.6; color: var(--muted); margin: 20px 0 0; }
+footer { display: flex; justify-content: space-between; padding: 30px 0; margin-top: 16px; color: var(--muted); font: italic 14px Georgia, serif; }
+footer span { font: 10px sans-serif; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 720px) {
+  .masthead { padding: 20px; }
+  .masthead > .small-label { display: none; }
+  main { padding: 0 16px; }
+  .intro { padding: 32px 6px 26px; }
+  h1 { font-size: 42px; }
+  .layout { grid-template-columns: 1fr; gap: 18px; }
+  .card { padding: 22px; border-radius: 18px; }
+  .section-heading { margin-bottom: 22px; }
+  .timer-panel { padding: 22px 16px; }
+  .brewing .brew { grid-row: 1; }
+  .brewing .intro { display: none; }
+  .brewing .layout { padding-top: 18px; }
+  footer span { display: none; }
+}
+@media (max-width: 360px) {
+  .card { padding: 16px; }
+  .recipe-stats strong { font-size: 16px; }
+  .small-label { font-size: 8px; }
+  .timeline li { gap: 8px; padding-inline: 4px; }
+  .pour-target strong { font-size: 23px; }
+}
