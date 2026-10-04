@@ -34,6 +34,9 @@ async function main() {
   let recipeId = selectedByBrewer[brewer];
   const preferenceKey = () => recipeId;
   const doses = {}, notes = {};
+  const bagNotes = Object.fromEntries(Object.entries(saved.bagNotes ?? {})
+    .filter(([, value]) => typeof value === 'string')
+    .map(([key, value]) => [key, value.trim().slice(0, 80)]));
   for (const definition of recipes) {
     const key = definition.id;
     const oldKey = definition.legacyVariant === 'hot' ? definition.brewer : definition.legacyVariant ? `${definition.brewer}:${definition.legacyVariant}` : null;
@@ -84,6 +87,28 @@ async function main() {
   let terminalSave = Promise.resolve();
   let brewId = timer && typeof saved.session?.brewId === 'string' ? saved.session.brewId : null;
   let sessionBagId = timer ? saved.session?.bagId || null : null;
+  let sessionGrindSetting = timer && typeof saved.session?.grindSetting === 'string'
+    ? saved.session.grindSetting.slice(0, 80) : null;
+  let lastBrew = null, lastBrewRequest = 0, repeating = false;
+  const selectedBagId = () => timer ? sessionBagId : $('brew-bag').value || null;
+  const bagNoteKey = () => `${selectedBagId()}:${recipeId}`;
+  const grindOverride = () => (selectedBagId() ? bagNotes[bagNoteKey()] : '') || notes[recipeId] || '';
+  const grindSetting = () => (timer && sessionGrindSetting) || grindOverride() || recipe.grind;
+  if (timer && !sessionGrindSetting) sessionGrindSetting = grindSetting();
+  function saveGrind(value) {
+    if (selectedBagId()) {
+      if (value) bagNotes[bagNoteKey()] = value;
+      else delete bagNotes[bagNoteKey()];
+    } else notes[recipeId] = value;
+  }
+  function renderGrind() {
+    $('grind-note').value = timer ? grindSetting() : grindOverride();
+    setText('grind', grindSetting());
+    setText('grind-note-label', selectedBagId() ? 'Save a dial setting for this bag and recipe' : 'Save a dial setting for this recipe');
+    setText('grind-note-hint', selectedBagId()
+      ? 'Saved for this bag + recipe in this browser. Clear to use your recipe setting or its starting suggestion.'
+      : 'Saved for this recipe in this browser. Used when a bag has no setting of its own.');
+  }
   const validTemperature = value => Number.isInteger(value) && value >= 140 && value <= 212;
   const temperatures = Object.fromEntries(Object.entries(saved.temperatures ?? {}).filter(([, value]) => validTemperature(value)));
   // The legacy global 203°F was an implicit default. Preserve non-default
@@ -114,6 +139,7 @@ async function main() {
     if (location.hash !== '#' + selected) history.replaceState(null, '', '#' + selected);
     if (selected === 'journal') { refreshService('refreshJournal'); void refreshSummary(); }
     if (selected === 'beans') refreshService('refreshBags');
+    if (selected === 'brew' && service) void refreshLastBrew();
   }
 
   function renderBagHint() {
@@ -122,6 +148,43 @@ async function main() {
       bag.remainingGrams == null ? null : `${Math.round(bag.remainingGrams)} g remaining`,
       bag.caffeineType !== 'regular' ? bag.caffeineType : null].filter(Boolean).join(' · ')
       : 'No bag selected. Your brew will still be saved in the journal.');
+    renderGrind();
+    if (service) void refreshLastBrew();
+  }
+
+  async function refreshLastBrew() {
+    const request = ++lastBrewRequest;
+    const bagId = selectedBagId();
+    lastBrew = null;
+    $('last-brew').hidden = !bagId;
+    $('repeat-last-brew').hidden = true;
+    $('last-brew-details').replaceChildren();
+    setText('last-brew-status', bagId ? 'Loading last completed brew…' : '');
+    if (!bagId) return;
+    try {
+      const query = new URLSearchParams({ bagId, status: 'completed', limit: '1' });
+      const data = await api(`/api/brews?${query}`);
+      if (request !== lastBrewRequest) return;
+      lastBrew = data.brews[0] ?? null;
+      if (!lastBrew) { setText('last-brew-status', 'No completed brews for this bag yet.'); return; }
+      const brew = lastBrew;
+      setText('last-brew-status', `${brew.recipe?.name ?? brew.brewer} · ${brew.recipe?.label ?? 'Recipe'} · ${new Date(brew.startedAt).toLocaleString()}`);
+      const lines = [
+        `${brew.dose} g coffee · ${brew.temperatureF}°F · grind ${brew.grindSetting}`,
+        brew.rating == null ? 'Not rated yet' : `Rating: ${brew.rating}/5`,
+        brew.taste ? `Taste: ${brew.taste}` : '',
+        brew.notes ? `Notes: ${brew.notes}` : 'No tasting notes yet.',
+      ];
+      for (const line of lines.filter(Boolean)) {
+        const paragraph = document.createElement('p');
+        paragraph.textContent = line;
+        $('last-brew-details').append(paragraph);
+      }
+      $('repeat-last-brew').hidden = false;
+      $('repeat-last-brew').disabled = Boolean(timer) || repeating;
+    } catch {
+      if (request === lastBrewRequest) setText('last-brew-status', 'Last brew is unavailable. Check your connection and refresh; you can still brew.');
+    }
   }
 
   let summaryRequest = 0;
@@ -162,8 +225,8 @@ async function main() {
   }
 
   function persist() {
-    $('storage-warning').hidden = saveState({ brewer, recipeId, selectedByBrewer, doses, notes, temperatureF, temperatures,
-      session: timer ? { brewer, recipeId, definition, dose: recipe.dose, timer, brewId, bagId: sessionBagId, temperatureF } : null });
+    $('storage-warning').hidden = saveState({ brewer, recipeId, selectedByBrewer, doses, notes, bagNotes, temperatureF, temperatures,
+      session: timer ? { brewer, recipeId, definition, dose: recipe.dose, timer, brewId, bagId: sessionBagId, temperatureF, grindSetting: sessionGrindSetting } : null });
   }
 
   async function syncWakeLock() {
@@ -203,7 +266,7 @@ async function main() {
     if (syncDose) $('dose').value = recipe.dose;
     $('dose').min = recipe.min;
     $('dose').max = recipe.max;
-    $('grind-note').value = notes[preferenceKey()];
+    renderGrind();
     const choices = recipes.filter(item => item.brewer === brewer);
     $('variant-field').hidden = choices.length < 2;
     $('recipe-label').textContent = `${recipe.name} recipe`;
@@ -226,7 +289,7 @@ async function main() {
     setText('ice-guide', `${recipe.ice} g brewing ice + ${recipe.water} g hot water = ${recipe.totalWater} g combined. Add ice after discarding rinse water, then tare before pouring. Extra topping ice is not included.`);
     setText('temperature', `${temperatureF}°F`);
     setText('temperature-hint', `Recipe recommendation: ${recipe.temperature}. Your temperature is remembered for this recipe.`);
-    setText('grind', notes[preferenceKey()] || recipe.grind);
+    setText('grind', grindSetting());
     setText('texture', recipe.texture);
     setText('prep', recipe.prep);
     setText('duration', recipe.hasManualSteps ? `${formatTime(recipe.duration)} timed + manual steps` : `About ${formatTime(recipe.duration)}`);
@@ -279,6 +342,7 @@ async function main() {
     const step = recipe.steps[index] || recipe.steps.at(-1);
     document.body.classList.toggle('brewing', Boolean(active));
     $('settings').disabled = Boolean(timer);
+    $('repeat-last-brew').disabled = Boolean(timer) || !lastBrew || repeating;
     $('start').hidden = Boolean(timer);
     $('active-controls').hidden = !active;
     $('next-step').hidden = !active || !step.manual || index < 0;
@@ -358,7 +422,6 @@ async function main() {
   });
   $('dose').addEventListener('input', updateDose);
   $('temperature-f').addEventListener('input', updateDose);
-  $('brew-bag').addEventListener('change', renderBagHint);
   for (const [id, delta] of [['less', -1], ['more', 1]]) {
     $(id).addEventListener('click', () => {
       $('dose').value = Math.round(Math.max(recipe.min, Math.min(recipe.max, ($('dose').valueAsNumber || recipe.dose) + delta)) * 10) / 10;
@@ -366,18 +429,20 @@ async function main() {
     });
   }
   $('grind-note').addEventListener('input', () => {
-    notes[preferenceKey()] = $('grind-note').value.trim().slice(0, 80);
-    setText('grind', notes[preferenceKey()] || recipe.grind);
+    if (timer) return;
+    saveGrind($('grind-note').value.trim().slice(0, 80));
+    setText('grind', grindSetting());
     persist();
   });
   $('start').addEventListener('click', () => {
     if (timer || $('start').disabled) return;
     brewId = newId();
     sessionBagId = $('brew-bag').value || null;
+    sessionGrindSetting = grindSetting();
     timer = startTimer();
     void queueBrew('/api/brews', 'POST', {
       id: brewId, bagId: sessionBagId, recipeId, recipeVersion: definition.version, dose: recipe.dose,
-      temperatureF, grindSetting: notes[preferenceKey()] || recipe.grind,
+      temperatureF, grindSetting: sessionGrindSetting,
       startedAt: new Date(timer.startedAt).toISOString(),
     });
     persist();
@@ -415,6 +480,7 @@ async function main() {
     timer = null;
     brewId = null;
     sessionBagId = null;
+    sessionGrindSetting = null;
     // Return to the current catalog after a snapshot-backed session ends.
     if (!recipes.some(item => item.id === recipeId)) recipeId = recipes[0].id;
     definition = resolveRecipe(recipes, { recipeId });
@@ -491,41 +557,58 @@ async function main() {
   void syncWakeLock();
   setInterval(() => { if (timer?.status === 'running') renderTimer(); }, 200);
   navigate(location.hash.slice(1));
+  function brewAgain(brew) {
+    if (timer) {
+      message('Finish or discard the current timer, then choose Make another cup before repeating a brew.');
+      navigate('brew');
+      return;
+    }
+    let repeated;
+    try { repeated = resolveRecipe(recipes, { ...brew, recipeId: brew.recipeId ?? brew.recipe?.id }); }
+    catch { message('That recipe is no longer available. Choose another recipe to brew.'); navigate('brew'); return; }
+    definition = repeated;
+    brewer = definition.brewer;
+    recipeId = definition.id;
+    selectedByBrewer[brewer] = recipeId;
+    doses[preferenceKey()] = brew.dose;
+    const bag = service.getBag(brew.bagId);
+    service.setSelectedBag(bag && !bag.archived ? brew.bagId : null);
+    saveGrind(brew.grindSetting);
+    temperatureF = brew.temperatureF;
+    temperatures[recipeId] = temperatureF;
+    $('temperature-f').value = temperatureF;
+    recipe = createRecipe(definition);
+    renderRecipe();
+    $('dose').value = brew.dose;
+    updateDose();
+    renderBagHint();
+    message(bag?.archived ? 'Recipe loaded. That bag is archived; choose an active bag before brewing.' : 'Recipe loaded. Tare your scale when you’re ready.');
+    navigate('brew');
+  }
+  $('refresh-last-brew').addEventListener('click', () => { void refreshLastBrew(); });
+  $('repeat-last-brew').addEventListener('click', async () => {
+    if (timer || !lastBrew || repeating) return;
+    const target = lastBrew;
+    const request = lastBrewRequest;
+    repeating = true;
+    renderTimer();
+    try {
+      // Re-read before replay so an edited or deleted preview is never reused.
+      const brew = await api(`/api/brews/${encodeURIComponent(target.id)}`);
+      if (request === lastBrewRequest && !timer) brewAgain(brew);
+    } catch (error) {
+      message(`Could not repeat brew: ${error.message}`);
+      void refreshLastBrew();
+    } finally { repeating = false; renderTimer(); }
+  });
   service = await initService({
     recipes,
     getActiveBrewId: () => timer && timer.status !== 'finished' ? brewId : null,
     onNavigate: navigate,
     onBagsChanged: renderBagHint,
-    onServiceChange: refreshSummary,
+    onServiceChange: async () => { await Promise.allSettled([refreshSummary(), refreshLastBrew()]); },
     onBrewDeleted: forgetDeletedBrew,
-    onBrewAgain: brew => {
-      if (timer) {
-        message('Finish or discard the current timer, then choose Make another cup before repeating a brew.');
-        navigate('brew');
-        return;
-      }
-      let repeated;
-      try { repeated = resolveRecipe(recipes, { ...brew, recipeId: brew.recipeId ?? brew.recipe?.id }); }
-      catch { message('That recipe is no longer available. Choose another recipe to brew.'); navigate('brew'); return; }
-      definition = repeated;
-      brewer = definition.brewer;
-      recipeId = definition.id;
-      selectedByBrewer[brewer] = recipeId;
-      doses[preferenceKey()] = brew.dose;
-      notes[preferenceKey()] = brew.grindSetting;
-      temperatureF = brew.temperatureF;
-      temperatures[recipeId] = temperatureF;
-      $('temperature-f').value = temperatureF;
-      recipe = createRecipe(definition);
-      renderRecipe();
-      $('dose').value = brew.dose;
-      updateDose();
-      const bag = service.getBag(brew.bagId);
-      service.setSelectedBag(bag && !bag.archived ? brew.bagId : null);
-      renderBagHint();
-      message(bag?.archived ? 'Recipe loaded. That bag is archived; choose an active bag before brewing.' : 'Recipe loaded. Tare your scale when you’re ready.');
-      navigate('brew');
-    },
+    onBrewAgain: brewAgain,
   });
   if (timer) service.setSelectedBag(sessionBagId);
   renderBagHint();

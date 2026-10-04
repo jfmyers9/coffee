@@ -41,8 +41,15 @@
           <div class="recipe-stats"><div><span class="small-label" id="water-label">WATER</span><strong id="water"></strong></div><div><span class="small-label" id="ratio-label">RATIO</span><strong id="ratio">1 : 16</strong></div><div><span class="small-label">TEMPERATURE</span><strong id="temperature"></strong></div></div>
           <p id="ice-guide" class="notice" hidden></p>
           <div class="grind"><span aria-hidden="true">✳</span><div><span class="small-label">GRIND GUIDE</span><h3 id="grind"></h3><p id="texture"></p></div></div>
-          <details><summary>Your grinder setting <span>optional</span></summary><label for="grind-note">Save a dial setting for this recipe</label><input id="grind-note" type="text" maxlength="80" placeholder="e.g. grinder model · dial setting"><p class="hint">Settings vary by grinder and beans. Saved only in this browser.</p></details>
+          <details><summary>Your grinder setting <span>optional</span></summary><label id="grind-note-label" for="grind-note">Save a dial setting for this recipe</label><input id="grind-note" type="text" maxlength="80" placeholder="e.g. grinder model · dial setting"><p id="grind-note-hint" class="hint">Settings vary by grinder and beans. Saved only in this browser.</p></details>
         </fieldset>
+        <section id="last-brew" class="prep" aria-labelledby="last-brew-heading" hidden>
+          <h3 id="last-brew-heading">Last completed brew for this bag</h3>
+          <p id="last-brew-status" class="hint" role="status"></p>
+          <div id="last-brew-details"></div>
+          <button id="repeat-last-brew" class="secondary" hidden>Repeat this brew</button>
+          <button id="refresh-last-brew" class="text-button">Refresh last brew</button>
+        </section>
         <div class="prep"><h3>Before you begin</h3><p id="prep"></p><p>Follow the recipe's preparation instructions. Water targets are cumulative: don't tare between water additions.</p></div>
       </section>
       <section class="card brew" aria-labelledby="brew-heading">

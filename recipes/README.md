@@ -151,7 +151,7 @@ partially executed. Comments use standard Cooklang `-- comment` syntax.
 
 ## Persistence and editing
 
-Dose/grinder/temperature preferences are keyed by recipe ID. Old browser preferences and
+Dose/temperature preferences are keyed by recipe ID. Grinder overrides are keyed by bag + recipe, falling back to the browser’s recipe-wide setting and then the file’s grind suggestion. Old browser preferences and
 brewer/variant requests migrate automatically; no database migration is needed.
 Active local timers store their recipe definition, so editing a file cannot
 change an already-running timeline after reload. Journal entries retain the

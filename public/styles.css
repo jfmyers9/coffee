@@ -169,3 +169,6 @@ footer span { font: 10px sans-serif; }
   .timeline li { gap: 8px; padding-inline: 4px; }
   .pour-target strong { font-size: 23px; }
 }
+
+#last-brew { overflow-wrap: anywhere; }
+#last-brew-details p { white-space: pre-wrap; }
