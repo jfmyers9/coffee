@@ -48,7 +48,7 @@ test('iced V60 retains its own dose and grind, restores timer, and replays from 
   await page.getByLabel('V60 recipe').selectOption('hot');
   await page.getByRole('link', { name: 'Journal', exact: true }).click();
   const card = page.locator('.journal-card').filter({ hasText: bag.name });
-  await expect(card).toContainText('Japanese iced');
+  await expect(card).toContainText('Japanese Iced');
   await expect(card).toContainText('150 g hot water');
   await expect(card).toContainText('75 g brewing ice');
   await card.getByRole('button', { name: 'Brew again' }).click();

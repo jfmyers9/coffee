@@ -307,7 +307,7 @@ export async function initService({ onBrewAgain = () => {}, onBagsChanged = () =
       const date = new Date(brew.startedAt || brew.createdAt);
       card.append(node('p', Number.isNaN(date.getTime()) ? 'Date not recorded' : date.toLocaleString(), 'muted'));
       const iced = (brew.variant ?? brew.recipe?.variant) === 'japanese-iced';
-      card.append(node('p', `${brew.brewer === 'v60' ? 'V60' : brew.brewer === 'chemex' ? 'Chemex' : brew.brewer} · ${iced ? 'Japanese iced' : 'Hot'} · ${brew.dose} g coffee · ${brew.water} g ${iced ? 'hot ' : ''}water${brew.temperatureF != null ? ` · ${brew.temperatureF}°F` : ''}${brew.grindSetting != null ? ` · grind ${brew.grindSetting}` : ''}`));
+      card.append(node('p', `${brew.brewer === 'v60' ? 'V60' : brew.brewer === 'chemex' ? 'Chemex' : brew.brewer} · ${iced ? 'Japanese Iced' : 'Hot'} · ${brew.dose} g coffee · ${brew.water} g ${iced ? 'hot ' : ''}water${brew.temperatureF != null ? ` · ${brew.temperatureF}°F` : ''}${brew.grindSetting != null ? ` · grind ${brew.grindSetting}` : ''}`));
       if (iced) card.append(node('p', `${brew.ice ?? brew.recipe.ice} g brewing ice · ${brew.totalWater ?? brew.recipe.totalWater} g combined water + ice, before topping ice`, 'muted'));
       if (snapshot?.caffeineType) card.append(node('p', snapshot.caffeineType, 'tag'));
       if (brew.elapsedSeconds != null) card.append(node('p', `${Math.floor(brew.elapsedSeconds / 60)}:${String(Math.floor(brew.elapsedSeconds % 60)).padStart(2, '0')} elapsed`, 'muted'));

@@ -90,9 +90,9 @@ These are opinionated starting recipes for medium-roast beans, not manufacturer-
 
 Water targets mean **water added**, not beverage yield. Tare once before brewing; don't tare between pours. Pour rates are suggested averages, not measurements. Never overflow the brewer to keep up with the timer: pause the guide if the bed is full. The timer does not auto-finish at the target drawdown time; tap Finish brew when draining is done.
 
-### Japanese iced V60
+### Japanese Iced V60
 
-Choose **V60 → Japanese iced**. This recipe keeps its own remembered dose and grinder override, separate from hot V60, and is saved/repeated as an iced recipe in the journal.
+Choose **V60 → Japanese Iced**. This recipe keeps its own remembered dose and grinder override, separate from hot V60, and is saved/repeated as an iced recipe in the journal.
 
 At the default **15 g coffee**, start at **203°F** and **Encore 13** (two clicks finer than the hot V60 starting suggestion; adjust to taste):
 
