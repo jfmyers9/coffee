@@ -7,9 +7,10 @@ A shared, mobile-first coffee service for your household. Keep a bean shelf, fol
 - **Bean shelf:** roaster, coffee name, origin, process, variety, roast, tasting notes, purchase/roast/open dates, price, regular/decaf/half-caf, and a bag photo. A newly added bag becomes the default. Archive empty bags without losing history.
 - **Guided brewing:** choose beans and grams, get cumulative water targets, bloom/rest timing, Encore starting settings, and a temperature in **°F**. The timer survives reloads and attempts to keep the screen awake.
 - **Automatic journal:** starting a timer records a brew. Finish or discard updates it automatically. Retrying a request never creates a second brew or double-counts beans. Recipe and coffee-name snapshots preserve what you used even if the bag is later edited.
+- **Mistakes/test brews:** use **Delete brew** on a completed or discarded journal entry. Confirm to permanently remove its results/servings and return its dose to the bag inventory. Finish or discard an active brew first. If you actually used the beans, keep the discarded record instead. Deletion requires a connection.
 - **Results:** optional 1–5 rating, taste, notes, actual water added, and individual household servings with milk choice. Repeat a past brew without manually copying its settings.
 - **Shared cups:** today's completed brews and servings across the database, including entered caffeine amounts and explicitly unknown amounts. The day uses the viewing device's local time zone.
-- **Inventory:** original bag weight minus coffee used by all started brews, including discarded brews. This is an estimate; it doesn't account for spills or coffee used outside the app. Negative inventory is shown rather than silently hiding a discrepancy.
+- **Inventory:** original bag weight minus coffee used by all started brews, including discarded brews. This is an estimate; it doesn't account for spills or coffee used outside the app. Negative inventory is shown rather than silently hiding a discrepancy. Deleted mistakes/test brews do not count toward usage.
 
 ### Caffeine and breastfeeding
 
@@ -122,6 +123,7 @@ Existing saved brews and queued events without a variant remain hot recipes. No 
 - Elapsed time uses timestamps rather than counting ticks, so reloads and background tabs catch up correctly. Pauses freeze the guide. Avoid changing the device clock mid-brew.
 - Best-effort screen wake lock while running; mobile OS restrictions may still suspend the page. No background audio/notifications or offline service worker. Keep the page visible.
 - Use one tab per brew. Web Locks protect outbox writes across tabs where supported, but live timer controls are not coordinated between tabs.
+- Deleted brew contents are removed from the database, journal, daily totals, and JSON export. Only the UUID and deletion timestamp remain to prevent delayed offline requests from recreating the entry. Confirmed deletion clears queued updates for that brew on retry; other brews are unaffected. Database backups made before deletion still contain the old record.
 - Recipe settings are locked during a brew. Discard or finish and choose Make another cup to change them.
 - Photos are resized in the browser to at most 1200 pixels and re-encoded as JPEG, removing source metadata. The server accepts JPEG/PNG/WebP signatures with a 2 MB decoded limit and stores bytes in Postgres, so no writable upload volume is required. Phone formats the browser cannot decode (such as some HEIC files) need conversion first.
 

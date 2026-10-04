@@ -159,6 +159,76 @@ test('Postgres API integration', { skip: !databaseUrl && 'Set TEST_DATABASE_URL 
     assert.equal(exported.defaultBagId, bag.id);
   });
 
+  await t.test('deleting finished or discarded mistakes restores inventory and removes journal results', async () => {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const tomorrow = new Date(today.getTime() + 86400000);
+    const summaryPath = `/api/summary?from=${today.toISOString()}&to=${tomorrow.toISOString()}`;
+    for (const status of ['discarded', 'completed']) {
+      const bag = await createBag({ weightGrams: 340 });
+      const input = brewInput({ bagId: bag.id });
+      const brew = await ok('/api/brews', 'POST', input, 201);
+      const path = `/api/brews/${brew.id}`;
+      const person = `Deleted ${randomUUID()}`;
+      await ok(path, 'PATCH', { status, servings: [{ person, volumeMl: 200, milk: 'none', caffeineMg: 80 }] });
+      const before = await ok(summaryPath);
+      assert.equal((await ok(`/api/bags/${bag.id}`)).remainingGrams, 320);
+      assert.deepEqual(await ok(path, 'DELETE', {}), { id: brew.id, deleted: true });
+      assert.deepEqual(await ok(path, 'DELETE', {}), { id: brew.id, deleted: true }); // Lost response retry.
+      assert.equal((await ok(`/api/bags/${bag.id}`)).remainingGrams, 340);
+      assert.equal((await ok(`/api/brews?bagId=${bag.id}`)).total, 0);
+      assert.equal((await ok('/api/export')).brews.some(item => item.id === brew.id), false);
+      const after = await ok(summaryPath);
+      assert.equal(after.brewsCompleted, before.brewsCompleted - (status === 'completed' ? 1 : 0));
+      assert.equal(after.totalDose, before.totalDose - (status === 'completed' ? 20 : 0));
+      assert.equal(after.servings.some(serving => serving.person === person), false);
+      for (const [method, body] of [['GET', undefined], ['PATCH', { status: 'completed' }]]) {
+        assert.equal((await request(path, { method, body })).status, 410);
+      }
+      assert.equal((await request('/api/brews', { method: 'POST', body: input })).status, 410);
+      await migrate(pool); // Tombstones survive repeated migrations.
+      assert.equal((await request('/api/brews', { method: 'POST', body: input })).status, 410);
+      assert.equal((await pool.query('SELECT * FROM deleted_brews WHERE id=$1', [brew.id])).rowCount, 1);
+    }
+  });
+
+  await t.test('deletion rejects active brews, invalid requests, and cross-site writes', async () => {
+    const brew = await createBrew();
+    const path = `/api/brews/${brew.id}`;
+    assert.equal((await request(path, { method: 'DELETE', body: {} })).status, 409);
+    assert.equal((await ok(path)).status, 'brewing');
+    assert.equal((await pool.query('SELECT 1 FROM deleted_brews WHERE id=$1', [brew.id])).rowCount, 0);
+    await ok(path, 'PATCH', { status: 'discarded' });
+    assert.equal((await request(path, { method: 'DELETE', body: { force: true } })).status, 400);
+    assert.equal((await request(path, { method: 'DELETE', body: {}, headers: { Origin: 'https://elsewhere.example' } })).status, 403);
+    assert.equal((await request(path, { method: 'DELETE', body: {}, headers: { 'Content-Type': 'text/plain' } })).status, 415);
+    assert.equal((await ok(path)).status, 'discarded');
+    assert.equal((await request('/api/brews/not-a-uuid', { method: 'DELETE', body: {} })).status, 400);
+    assert.equal((await request(`/api/brews/${randomUUID()}`, { method: 'DELETE', body: {} })).status, 404);
+    await ok(path, 'DELETE', {}); // Unlinked brews may also be deleted.
+  });
+
+  await t.test('concurrent deletion, patch, and create retries never resurrect or double-credit a brew', async () => {
+    const bag = await createBag({ weightGrams: 340 });
+    const input = brewInput({ bagId: bag.id });
+    const brew = await ok('/api/brews', 'POST', input, 201);
+    const path = `/api/brews/${brew.id}`;
+    await ok(path, 'PATCH', { status: 'discarded' });
+    const results = await Promise.all([
+      request(path, { method: 'DELETE', body: {} }),
+      request('/api/brews', { method: 'POST', body: input }),
+      request(path, { method: 'PATCH', body: { notes: 'Delayed result edit' } }),
+      request(path, { method: 'DELETE', body: {} }),
+    ]);
+    assert.equal(results[0].status, 200);
+    assert.ok([200, 410].includes(results[1].status));
+    assert.ok([200, 410].includes(results[2].status));
+    assert.equal(results[3].status, 200);
+    assert.equal((await ok(`/api/bags/${bag.id}`)).remainingGrams, 340);
+    assert.equal((await ok(`/api/brews?bagId=${bag.id}`)).total, 0);
+    assert.equal((await request(path)).status, 410);
+  });
+
   await t.test('concurrent duplicate brew requests consume inventory exactly once', async () => {
     const bag = await createBag({ weightGrams: 200 });
     const input = brewInput({ bagId: bag.id });

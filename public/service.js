@@ -73,7 +73,7 @@ async function resizePhoto(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export async function initService({ recipes = [], onBrewAgain = () => {}, onBagsChanged = () => {}, onServiceChange = () => {}, onNavigate = () => {}, getActiveBrewId = () => null } = {}) {
+export async function initService({ recipes = [], onBrewAgain = () => {}, onBrewDeleted = () => {}, onBagsChanged = () => {}, onServiceChange = () => {}, onNavigate = () => {}, getActiveBrewId = () => null } = {}) {
   const beansRoot = document.getElementById('beans-content');
   const journalRoot = document.getElementById('journal-content');
   const brewSelect = document.getElementById('brew-bag');
@@ -89,6 +89,8 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBags
   const journalMessage = notice();
   const beanEditor = node('div');
   const resultEditor = node('div');
+  let resultBrewId = null;
+  journalMessage.tabIndex = -1;
   const bagList = node('div', null, 'service-grid');
   const journalList = node('div', null, 'service-grid');
   const toolbar = node('div', null, 'service-toolbar');
@@ -333,15 +335,45 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBags
         });
         row.append(close);
       }
+      if (['completed', 'discarded'].includes(brew.status)) {
+        const remove = button('Delete brew', () => {
+          if (getActiveBrewId() === brew.id) {
+            journalMessage.textContent = 'This timer is active on this device. Finish or discard it on the Brew tab.';
+            return;
+          }
+          const inventory = brew.bagId ? ` Its ${brew.dose} g dose will be returned to the bag's inventory.` : '';
+          if (!window.confirm(`Permanently delete this brew, its results, and its servings?${inventory} This cannot be undone. If you actually used the coffee, keep the discarded record instead.`)) return;
+          action(remove, journalMessage, async () => {
+            await mutate(`/api/brews/${encodeURIComponent(brew.id)}`, { method: 'DELETE', body: {} });
+            ++journalRequest; // Ignore list responses started before the deletion.
+            brews = brews.filter(item => item.id !== brew.id);
+            total = Math.max(0, total - 1);
+            if (resultBrewId === brew.id) {
+              resultBrewId = null;
+              resultEditor.replaceChildren();
+            }
+            renderJournal();
+            await onBrewDeleted(brew.id);
+            const results = await Promise.allSettled([refreshJournal(), refreshBags()]);
+            journalMessage.textContent = results.some(result => result.status === 'rejected')
+              ? 'Brew deleted, but some views could not refresh. Reload to see updated totals.'
+              : 'Brew deleted. Its dose no longer counts toward bag usage or daily totals.';
+            journalMessage.focus();
+          });
+        });
+        row.append(remove);
+      }
       card.append(row);
       journalList.append(card);
     }
   }
 
   async function showResults(brewId) {
+    resultBrewId = brewId;
     try {
       onNavigate('journal');
       const brew = await api(`/api/brews/${encodeURIComponent(brewId)}`);
+      if (resultBrewId !== brewId) return;
       if (brew.status !== 'completed') throw new Error('Only completed brews can have a result edited.');
       resultEditor.replaceChildren();
       const form = node('form', null, 'service-form card');
@@ -381,7 +413,7 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBags
       const row = node('div', null, 'button-row');
       const save = node('button', 'Save result', 'primary');
       save.type = 'submit';
-      row.append(save, button('Cancel', () => resultEditor.replaceChildren()));
+      row.append(save, button('Cancel', () => { resultBrewId = null; resultEditor.replaceChildren(); }));
       form.append(grid, node('h3', 'Household cups'), node('p', 'Add your cup and optionally a partner’s cup. Leave unknown caffeine blank.', 'muted'), servings, button('Add serving', () => addServing()), node('p', caffeineWarning, 'notice'), message, row);
       form.addEventListener('submit', event => {
         event.preventDefault();

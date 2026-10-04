@@ -41,6 +41,12 @@ function normalizeLegacyRequest(request) {
   const { brewer, variant, ...rest } = request;
   return { recipeId: `${brewer}-${variant ?? 'hot'}`, ...rest };
 }
+async function isBrewDeleted(client, id) {
+  return (await client.query('SELECT 1 FROM deleted_brews WHERE id=$1', [id])).rowCount > 0;
+}
+async function rejectDeletedBrew(client, id) {
+  if (await isBrewDeleted(client, id)) throw new HttpError(410, 'Brew was permanently deleted');
+}
 function pagination(value, fallback, max) {
   if (value === null) return fallback;
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) > max) invalid('Invalid pagination');
@@ -99,6 +105,7 @@ export async function api({ pool, recipes, method, url, body }) {
     return transaction(pool, async client => {
       // Serializing the client UUID avoids a double inventory debit even for concurrent retries.
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [input.id]);
+      await rejectDeletedBrew(client, input.id);
       const existing = await client.query('SELECT request,data FROM brews WHERE id=$1', [input.id]);
       if (existing.rowCount) {
         // Older queued requests and persisted records predate recipe variants.
@@ -140,15 +147,35 @@ export async function api({ pool, recipes, method, url, body }) {
     return { data: { brews: rows.rows.map(row => row.data), total: count.rows[0].total } };
   }
   const brewRoute = /^\/api\/brews\/([^/]+)$/.exec(path);
-  if (brewRoute && ['GET', 'PATCH'].includes(method)) {
+  if (brewRoute && ['GET', 'PATCH', 'DELETE'].includes(method)) {
     const id = uuid(brewRoute[1]);
     if (method === 'GET') {
       const result = await pool.query('SELECT data FROM brews WHERE id=$1', [id]);
-      if (!result.rowCount) throw new HttpError(404, 'Brew not found');
+      if (!result.rowCount) {
+        await rejectDeletedBrew(pool, id);
+        throw new HttpError(404, 'Brew not found');
+      }
       return { data: result.rows[0].data };
+    }
+    if (method === 'DELETE') {
+      keys(body, []);
+      return { data: await transaction(pool, async client => {
+        // Share the create/update lock: deletion and the tombstone are atomic,
+        // including when another device is retrying an old create request.
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [id]);
+        if (await isBrewDeleted(client, id)) return { id, deleted: true };
+        const result = await client.query('SELECT status FROM brews WHERE id=$1 FOR UPDATE', [id]);
+        if (!result.rowCount) throw new HttpError(404, 'Brew not found');
+        if (result.rows[0].status === 'brewing') throw new HttpError(409, 'Finish or discard this brew before deleting it');
+        await client.query('INSERT INTO deleted_brews(id) VALUES($1)', [id]);
+        await client.query('DELETE FROM brews WHERE id=$1', [id]);
+        return { id, deleted: true };
+      }) };
     }
     const patch = brewPatch(body);
     return { data: await transaction(pool, async client => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [id]);
+      await rejectDeletedBrew(client, id);
       const result = await client.query('SELECT data FROM brews WHERE id=$1 FOR UPDATE', [id]);
       if (!result.rowCount) throw new HttpError(404, 'Brew not found');
       const existing = result.rows[0].data;

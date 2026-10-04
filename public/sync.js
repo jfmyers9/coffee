@@ -25,13 +25,23 @@ function writeQueue(queue) {
   catch { durable = false; }
 }
 
-function notify() {
-  listener({ pending: readQueue().length, syncing: Boolean(running), error: lastError, durable, conflicts: [...conflicts] });
+function notify(event = {}) {
+  listener({ ...event, pending: readQueue().length, syncing: Boolean(running), error: lastError, durable, conflicts: [...conflicts] });
 }
 
 function withQueueLock(operation) {
   // Serialize localStorage read-modify-write across tabs when Web Locks is available.
   return navigator.locks ? navigator.locks.request('morning-coffee-outbox', operation) : Promise.resolve().then(operation);
+}
+
+const brewIdFor = operation => operation.body.id || operation.path.split('/').at(-1);
+
+// Only call after the server confirms deletion (DELETE success or HTTP 410).
+// Drop all operations for this UUID, not just the first failed retry.
+export async function forgetDeletedBrew(brewId) {
+  await withQueueLock(() => writeQueue(readQueue().filter(operation => brewIdFor(operation) !== brewId)));
+  conflicts = conflicts.filter(conflict => conflict.brewId !== brewId);
+  notify({ deletedBrewId: brewId });
 }
 
 export function watchSync(callback) { listener = callback; notify(); }
@@ -54,9 +64,9 @@ export function flushBrews() {
     conflicts = [];
     lastError = '';
     while (true) {
-      const operation = readQueue().find(item => !attempted.has(item.id) && !blocked.has(item.body.id || item.path.split('/').at(-1)));
+      const operation = readQueue().find(item => !attempted.has(item.id) && !blocked.has(brewIdFor(item)));
       if (!operation) break;
-      const brew = operation.body.id || operation.path.split('/').at(-1);
+      const brew = brewIdFor(operation);
       attempted.add(operation.id);
       try {
         // Creates have a stable brew UUID. Replaying after a lost response is safe.
@@ -64,6 +74,12 @@ export function flushBrews() {
         await withQueueLock(() => writeQueue(readQueue().filter(item => item.id !== operation.id)));
         notify();
       } catch (error) {
+        if (error.status === 410) {
+          await forgetDeletedBrew(brew);
+          continue;
+        }
+        // A confirmed deletion may have removed an in-flight operation already.
+        if (!readQueue().some(item => item.id === operation.id)) continue;
         lastError = error.message;
         blocked.add(brew);
         if (error.status === 409 && operation.method === 'PATCH' && operation.body.status) {

@@ -3,7 +3,7 @@ import { elapsed, startTimer, pauseTimer, resumeTimer, validTimer } from './time
 import { readState, saveState } from './storage.js';
 import { api, newId } from './api.js';
 import { initService } from './service.js';
-import { queueBrew, flushBrews, watchSync, acceptServerVersions } from './sync.js';
+import { queueBrew, flushBrews, watchSync, acceptServerVersions, forgetDeletedBrew } from './sync.js';
 
 const $ = id => document.getElementById(id);
 const setText = (id, value) => {
@@ -418,7 +418,7 @@ async function main() {
   window.addEventListener('hashchange', () => navigate(location.hash.slice(1)));
   document.querySelectorAll('[data-page]').forEach(link => link.addEventListener('click', () => navigate(link.dataset.page)));
   let previousPending = 0;
-  watchSync(({ pending, syncing, error, durable, conflicts }) => {
+  watchSync(({ pending, syncing, error, durable, conflicts, deletedBrewId }) => {
     setText('sync-text', pending ? `${pending} brew update${pending === 1 ? '' : 's'} ${syncing ? 'syncing…' : 'waiting to sync'}${error && !syncing ? ` · ${error}` : ''}${!durable ? ' · keep this page open; browser storage is unavailable' : ''}`
       : 'Brew journal · automatically saved as you brew');
     $('sync-notice').classList.toggle('pending', pending > 0);
@@ -427,7 +427,13 @@ async function main() {
     if (previousPending > 0 && pending === 0) {
       refreshService('refreshAll');
       void refreshSummary();
-      message('Brew saved to your journal.');
+      message(deletedBrewId ? 'Deleted brew updates removed from this device.' : 'Brew saved to your journal.');
+    }
+    if (deletedBrewId) {
+      if (deletedBrewId === brewId) clearSession();
+      refreshService('refreshAll');
+      void refreshSummary();
+      message('Brew deleted. Queued updates for it have been removed.');
     }
     previousPending = pending;
   });
@@ -448,6 +454,7 @@ async function main() {
     onNavigate: navigate,
     onBagsChanged: renderBagHint,
     onServiceChange: refreshSummary,
+    onBrewDeleted: forgetDeletedBrew,
     onBrewAgain: brew => {
       if (timer) {
         message('Finish or discard the current timer, then choose Make another cup before repeating a brew.');
