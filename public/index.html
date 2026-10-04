@@ -31,19 +31,19 @@
           <a class="inline-link" href="#beans">Add a new bag →</a>
           <p class="field-label" id="brewer-label">Your brewer</p>
           <div id="brewer-options" class="brewers" role="group" aria-labelledby="brewer-label"></div>
-          <div id="variant-field"><label id="recipe-label" class="field-label" for="recipe-variant">Recipe</label><select id="recipe-variant"></select><p class="hint">A separate dose and grinder setting for each recipe.</p></div>
+          <div id="variant-field"><label id="recipe-label" class="field-label" for="recipe-variant">Recipe</label><select id="recipe-variant"></select><p class="hint">A separate dose, temperature, and grinder setting for each recipe.</p></div>
           <label class="field-label" for="dose">Coffee beans</label>
           <div class="dose-control"><button type="button" id="less" aria-label="Use fewer beans">−</button><div><input id="dose" type="number" inputmode="decimal" min="12" max="30" step="0.1" value="20" aria-describedby="dose-hint dose-error"><span>g</span></div><button type="button" id="more" aria-label="Use more beans">+</button></div>
           <p id="dose-hint" class="hint"></p><p id="dose-error" class="error" role="alert" hidden></p>
           <label class="field-label" for="temperature-f">Water temperature (°F)</label>
           <input id="temperature-f" type="number" min="140" max="212" step="1" value="203" inputmode="numeric" aria-describedby="temperature-hint">
-          <p class="hint" id="temperature-hint">Start at 203°F. Use cooler water for darker roasts.</p>
+          <p class="hint" id="temperature-hint"></p>
           <div class="recipe-stats"><div><span class="small-label" id="water-label">WATER</span><strong id="water"></strong></div><div><span class="small-label" id="ratio-label">RATIO</span><strong id="ratio">1 : 16</strong></div><div><span class="small-label">TEMPERATURE</span><strong id="temperature"></strong></div></div>
           <p id="ice-guide" class="notice" hidden></p>
           <div class="grind"><span aria-hidden="true">✳</span><div><span class="small-label">GRIND GUIDE</span><h3 id="grind"></h3><p id="texture"></p></div></div>
           <details><summary>Your grinder setting <span>optional</span></summary><label for="grind-note">Save a dial setting for this recipe</label><input id="grind-note" type="text" maxlength="80" placeholder="e.g. grinder model · dial setting"><p class="hint">Settings vary by grinder and beans. Saved only in this browser.</p></details>
         </fieldset>
-        <div class="prep"><h3>Before you begin</h3><p id="prep"></p><p>Heat your water, put the brewer on your scale, and tare to zero. Keep the cumulative water weight on the scale—don't tare between pours.</p></div>
+        <div class="prep"><h3>Before you begin</h3><p id="prep"></p><p>Follow the recipe's preparation instructions. Water targets are cumulative: don't tare between water additions.</p></div>
       </section>
       <section class="card brew" aria-labelledby="brew-heading">
         <div class="section-heading"><span class="number">02</span><h2 id="brew-heading">Find your flow</h2><span id="status" class="badge">READY</span></div>
@@ -56,6 +56,7 @@
           <div class="pour-target"><div><span id="target-label" class="small-label">FIRST SCALE TARGET</span><strong id="target"></strong></div><div><span class="small-label" id="rate-label">POUR RATE</span><strong id="rate"></strong></div></div>
           <progress id="progress" value="0" max="100" aria-label="Brew progress"></progress>
           <button class="primary" id="start" disabled>Start brewing <span aria-hidden="true">→</span></button>
+          <button class="primary" id="next-step" hidden>Done → Continue</button>
           <div class="active-controls" id="active-controls" hidden><button id="pause" class="primary">Pause</button><button id="finish" class="secondary">Finish brew</button></div>
           <button id="reset" class="text-button" hidden>Discard &amp; start over</button>
           <button id="rate-brew" class="secondary" hidden>Rate this cup &amp; log servings</button>
@@ -63,7 +64,8 @@
         </div>
         <div class="timeline-header"><h3>The recipe</h3><span id="duration" class="hint"></span></div>
         <ol id="timeline" class="timeline"></ol>
-        <p class="recipe-note">A starting point for medium-roast coffee. Times guide your pours, not the actual flow through your brewer. If the bed is full, pause and let it drain.</p>
+        <p id="recipe-attribution" class="recipe-note" hidden></p>
+        <p class="recipe-note">Use the recipe as a starting point and adjust to taste. Timed steps advance automatically; hands-on steps wait for you. Pause whenever you need to stop the clock.</p>
       </section>
     </div>
     </section>

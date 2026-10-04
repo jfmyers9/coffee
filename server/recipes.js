@@ -38,9 +38,10 @@ export function parseRecipe(source, filename = '<recipe>') {
       }
     } finally { syntax.free(); }
     const raw = parsed.recipe;
-    const meta = raw?.raw_metadata?.map?.coffee;
+    const metadata = raw?.raw_metadata?.map;
+    const meta = metadata?.coffee;
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) fail('Missing coffee metadata');
-    const allowed = ['id', 'brewer', 'brewerName', 'label', 'size', 'min', 'max', 'dose', 'grind', 'texture', 'temperature', 'order', 'icon', 'description', 'legacyVariant'];
+    const allowed = ['id', 'brewer', 'brewerName', 'label', 'size', 'min', 'max', 'dose', 'grind', 'texture', 'temperature', 'temperatureF', 'order', 'icon', 'description', 'legacyVariant'];
     if (Object.keys(meta).some(key => !allowed.includes(key))) fail('Unknown coffee metadata field');
     for (const key of ['id', 'brewer', 'brewerName', 'label', 'size', 'grind', 'texture', 'temperature']) {
       if (typeof meta[key] !== 'string' || !meta[key].trim() || meta[key].length > 1000) fail(`Invalid coffee.${key}`);
@@ -52,6 +53,18 @@ export function parseRecipe(source, filename = '<recipe>') {
     }
     if (meta.min > meta.dose || meta.dose > meta.max) fail('Default dose must be within min/max');
     if (meta.order !== undefined && !Number.isFinite(meta.order)) fail('Invalid coffee.order');
+    if (meta.temperatureF !== undefined && (!Number.isInteger(meta.temperatureF) || meta.temperatureF < 140 || meta.temperatureF > 212)) fail('Invalid coffee.temperatureF: use an integer from 140–212');
+    const attribution = {};
+    for (const key of ['author', 'source']) {
+      if (metadata[key] === undefined) continue;
+      if (typeof metadata[key] !== 'string' || !metadata[key].trim() || metadata[key].length > 2000 || /[\u0000-\u001f\u007f]/.test(metadata[key])) fail(`Invalid ${key} metadata`);
+      attribution[key] = metadata[key].trim();
+    }
+    if (attribution.source) {
+      let url;
+      try { url = new URL(attribution.source); } catch { fail('Invalid source metadata: use an absolute http(s) URL'); }
+      if (!/^https?:\/\//i.test(attribution.source) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) fail('Invalid source metadata: use an absolute http(s) URL without credentials');
+    }
     for (const key of ['icon', 'description', 'legacyVariant']) if (meta[key] !== undefined && (typeof meta[key] !== 'string' || !meta[key].trim())) fail(`Invalid coffee.${key}`);
 
     const convert = item => {
@@ -83,18 +96,21 @@ export function parseRecipe(source, filename = '<recipe>') {
     if (sections[0]?.title !== 'Prep' || sections.at(-1)?.title !== 'Finish') fail('First and last sections must be Prep and Finish');
     const prep = sections.shift().items, finish = sections.pop().items;
     if ([...prep, ...finish].some(item => item.type === 'timer') || finish.some(item => item.type === 'ingredient')) fail('Prep/Finish must be untimed; Finish must not add ingredients');
-    if (prep.some(item => item.name === 'water')) fail('Put brewing water only in timed pour steps; describe rinse water as plain text');
+    if (prep.some(item => item.name === 'water')) fail('Put brewing water only in brewing steps; describe rinse water as plain text');
     if (prep.filter(item => item.type === 'ingredient' && item.name === 'ice').length > 1) fail('Combine brewing ice into one Prep quantity');
     const coffee = prep.filter(item => item.type === 'ingredient' && item.name === 'coffee');
     if (coffee.length !== 1 || coffee[0].amount !== meta.dose || coffee[0].fixed) fail('Prep must contain one scalable coffee quantity matching coffee.dose');
+    let hasManualStep = false;
     const steps = sections.map(section => {
       const timers = section.items.filter(item => item.type === 'timer');
-      if (timers.length !== 1) fail(`"${section.title}" must have exactly one timer`);
+      if (timers.length > 1) fail(`"${section.title}" must have at most one timer`);
+      if (!timers.length) hasManualStep = true;
+      if (hasManualStep && timers[0]?.mode === 'until') fail('An until timer cannot follow a manual step; use a fixed or scaled duration');
       const ingredients = section.items.filter(item => item.type === 'ingredient');
-      if (ingredients.some(item => item.name !== 'water') || ingredients.length > 1) fail('Timed steps may contain at most one water quantity; put coffee and ice in Prep');
-      return { ...section, timer: timers[0] };
+      if (ingredients.some(item => item.name !== 'water') || ingredients.length > 1) fail('Brewing steps may contain at most one water quantity; put coffee and ice in Prep');
+      return { ...section, timer: timers[0] ?? null };
     });
-    const definition = { ...meta, order: meta.order ?? 100, prep, finish, steps,
+    const definition = { ...meta, ...attribution, temperatureF: meta.temperatureF ?? 203, order: meta.order ?? 100, prep, finish, steps,
       version: createHash('sha256').update(source).digest('hex') };
     // Validate every selectable dose, not just the default: scaled pours can
     // otherwise overrun an absolute timer mark at the edge of the dose range.

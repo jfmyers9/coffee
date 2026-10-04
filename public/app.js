@@ -1,4 +1,4 @@
-import { resolveRecipe, createRecipe, currentStep, formatTime } from './recipe.js';
+import { resolveRecipe, createRecipe, recipeProgress, completeManualStep, formatTime } from './recipe.js';
 import { elapsed, startTimer, pauseTimer, resumeTimer, validTimer } from './timer.js';
 import { readState, saveState } from './storage.js';
 import { api, newId } from './api.js';
@@ -84,7 +84,14 @@ async function main() {
   let terminalSave = Promise.resolve();
   let brewId = timer && typeof saved.session?.brewId === 'string' ? saved.session.brewId : null;
   let sessionBagId = timer ? saved.session?.bagId || null : null;
-  let temperatureF = Number.isInteger(saved.temperatureF) && saved.temperatureF >= 140 && saved.temperatureF <= 212 ? saved.temperatureF : 203;
+  const validTemperature = value => Number.isInteger(value) && value >= 140 && value <= 212;
+  const temperatures = Object.fromEntries(Object.entries(saved.temperatures ?? {}).filter(([, value]) => validTemperature(value)));
+  // The legacy global 203°F was an implicit default. Preserve non-default
+  // overrides only for the selected recipe; always preserve an active brew.
+  if (!saved.temperatures && validTemperature(saved.temperatureF) && (timer || saved.temperatureF !== 203)) temperatures[recipeId] = saved.temperatureF;
+  const preferredTemperature = () => temperatures[recipeId] ?? resolveRecipe(recipes, { recipeId }).temperatureF ?? 203;
+  let temperatureF = timer && validTemperature(saved.session?.temperatureF ?? saved.temperatureF)
+    ? saved.session.temperatureF ?? saved.temperatureF : temperatures[recipeId] ?? recipe.temperatureF;
   $('temperature-f').value = temperatureF;
 
   function message(value) {
@@ -155,8 +162,8 @@ async function main() {
   }
 
   function persist() {
-    $('storage-warning').hidden = saveState({ brewer, recipeId, selectedByBrewer, doses, notes, temperatureF,
-      session: timer ? { brewer, recipeId, definition, dose: recipe.dose, timer, brewId, bagId: sessionBagId } : null });
+    $('storage-warning').hidden = saveState({ brewer, recipeId, selectedByBrewer, doses, notes, temperatureF, temperatures,
+      session: timer ? { brewer, recipeId, definition, dose: recipe.dose, timer, brewId, bagId: sessionBagId, temperatureF } : null });
   }
 
   async function syncWakeLock() {
@@ -218,20 +225,39 @@ async function main() {
     $('ice-guide').hidden = !recipe.ice;
     setText('ice-guide', `${recipe.ice} g brewing ice + ${recipe.water} g hot water = ${recipe.totalWater} g combined. Add ice after discarding rinse water, then tare before pouring. Extra topping ice is not included.`);
     setText('temperature', `${temperatureF}°F`);
+    setText('temperature-hint', `Recipe recommendation: ${recipe.temperature}. Your temperature is remembered for this recipe.`);
     setText('grind', notes[preferenceKey()] || recipe.grind);
     setText('texture', recipe.texture);
     setText('prep', recipe.prep);
-    setText('duration', `About ${formatTime(recipe.duration)}`);
-    $('timeline').replaceChildren(...recipe.steps.map(step => {
+    setText('duration', recipe.hasManualSteps ? `${formatTime(recipe.duration)} timed + manual steps` : `About ${formatTime(recipe.duration)}`);
+    const attribution = $('recipe-attribution');
+    attribution.replaceChildren();
+    attribution.hidden = !recipe.author && !recipe.source;
+    if (recipe.author) attribution.append(document.createTextNode(`Recipe by ${recipe.author}. `));
+    // Validate even snapshot-backed links restored from browser storage.
+    if (recipe.source) {
+      try {
+        const url = new URL(recipe.source);
+        if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) {
+          const link = document.createElement('a');
+          link.href = url.href;
+          link.textContent = 'Original recipe';
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          attribution.append(link);
+        }
+      } catch { /* Ignore invalid links in old snapshots. */ }
+    }
+    $('timeline').replaceChildren(...recipe.steps.map((step, index) => {
       const item = document.createElement('li');
       const time = document.createElement('span');
       time.className = 'step-time';
-      time.textContent = formatTime(step.start);
+      time.textContent = recipe.hasManualSteps ? String(index + 1).padStart(2, '0') : formatTime(step.start);
       const body = document.createElement('div');
       const title = document.createElement('strong');
       title.textContent = step.title;
       const detail = document.createElement('small');
-      detail.textContent = step.pouring
+      detail.textContent = step.manual ? `At your pace${step.pouring ? ` · add ${step.added} g` : ''}` : step.pouring
         ? `Add ${step.added} g in ${step.end - step.start}s · ${step.rate.toFixed(1)} g/s`
         : `${step.end - step.start}s · no pouring`;
       body.append(title, detail);
@@ -246,7 +272,8 @@ async function main() {
 
   function renderTimer() {
     const seconds = timer ? elapsed(timer) / 1000 : 0;
-    const index = currentStep(recipe, seconds);
+    const position = recipeProgress(recipe, seconds, timer?.manualCompletions);
+    const { index } = position;
     const finished = timer?.status === 'finished';
     const active = timer && !finished;
     const step = recipe.steps[index] || recipe.steps.at(-1);
@@ -254,36 +281,39 @@ async function main() {
     $('settings').disabled = Boolean(timer);
     $('start').hidden = Boolean(timer);
     $('active-controls').hidden = !active;
+    $('next-step').hidden = !active || !step.manual || index < 0;
+    $('next-step').disabled = timer?.status !== 'running';
     $('reset').hidden = !timer;
     $('rate-brew').hidden = !finished || !brewId;
     setText('reset', finished ? 'Make another cup' : 'Discard & start over');
     setText('pause', timer?.status === 'paused' ? 'Resume' : 'Pause');
     setText('status', finished ? 'ENJOY' : timer?.status === 'paused' ? 'PAUSED' : timer ? 'BREWING' : 'READY');
     setText('clock', formatTime(seconds));
-    $('progress').value = Math.min(100, seconds / recipe.duration * 100);
+    $('progress').value = finished ? 100 : position.progress * 100;
     setText('phase-label', !timer ? 'A MOMENT TO SLOW DOWN' : finished ? 'YOUR COFFEE, YOUR MOMENT' : `${recipe.name} · ${recipe.label} · ${recipe.dose} G COFFEE · ${recipe.water} G ${recipe.ice ? 'HOT ' : ''}WATER`);
-    setText('timing', !timer ? `About ${formatTime(recipe.duration)} from first pour to last drip`
+    setText('timing', !timer ? recipe.hasManualSteps ? `${formatTime(recipe.duration)} of timed steps, plus time for hands-on steps` : `About ${formatTime(recipe.duration)} of guided brewing`
       : finished ? `Brew ended at ${formatTime(seconds)}`
-      : index < 0 ? 'Target time reached · finish when your coffee is ready'
-      : `${formatTime(Math.ceil(step.end - seconds))} left in this step${timer.status === 'paused' ? ' · timer paused' : ''}`);
+      : index < 0 ? 'Guide complete · finish when your coffee is ready'
+      : step.manual ? timer.status === 'paused' ? 'Timer paused · resume to continue' : 'Take your time · tap Done → Continue when ready'
+      : `${formatTime(Math.ceil(position.end - seconds))} left in this step${timer.status === 'paused' ? ' · timer paused' : ''}`);
     setText('instruction-title', finished ? 'Enjoy your coffee.' : !timer ? 'Ready when you are.' : index < 0 ? 'Complete the final step.' : step.title);
     setText('instruction', finished ? `${recipe.finishInstruction} Log a serving for each person who shared the brew.`
       : !timer ? 'Follow the preparation instructions, then start the timer as you begin the first step.'
-      : index < 0 ? 'No more water. The timer will keep running until you tap Finish brew.' : step.instruction);
+      : index < 0 ? `${recipe.finishInstruction} The timer will keep running until you tap Finish brew.` : step.instruction);
     setText('target-label', !timer ? 'FIRST SCALE TARGET' : finished ? recipe.ice ? 'HOT WATER POURED' : 'RECIPE WATER' : step.pouring && index >= 0 ? 'POUR TO · SCALE TARGET' : 'WATER ADDED · TARGET');
     setText('target', `${finished ? recipe.water : step.target} g`);
     setText('rate-label', finished ? 'COFFEE' : 'POUR RATE');
-    setText('rate', finished ? `${recipe.dose} g` : step.pouring && index >= 0 ? `${step.rate.toFixed(1)} g/s` : 'No pour');
+    setText('rate', finished ? `${recipe.dose} g` : step.pouring && index >= 0 ? step.manual ? 'At your pace' : `${step.rate.toFixed(1)} g/s` : 'No pour');
     [...$('timeline').children].forEach((item, i) => {
       const isCurrent = Boolean(active && i === index);
       item.classList.toggle('current', isCurrent);
-      item.classList.toggle('complete', Boolean(timer && seconds >= recipe.steps[i].end));
+      item.classList.toggle('complete', Boolean(timer && (index < 0 || i < index)));
       if (isCurrent) item.setAttribute('aria-current', 'step');
       else item.removeAttribute('aria-current');
     });
   }
 
-  function updateDose() {
+  function updateDose(event) {
     if (timer) return;
     try {
       const temperature = $('temperature-f').valueAsNumber;
@@ -293,6 +323,7 @@ async function main() {
       definition = resolveRecipe(recipes, { recipeId });
       recipe = createRecipe(definition, $('dose').valueAsNumber);
       temperatureF = temperature;
+      if (event?.target === $('temperature-f') || temperature !== recipe.temperatureF || temperatures[recipeId] != null) temperatures[recipeId] = temperature;
       doses[preferenceKey()] = recipe.dose;
       $('dose-error').hidden = true;
       $('dose').setAttribute('aria-invalid', 'false');
@@ -312,6 +343,7 @@ async function main() {
       if (timer) return;
       brewer = button.dataset.brewer;
       recipeId = selectedByBrewer[brewer];
+      $('temperature-f').value = preferredTemperature();
       $('dose').value = doses[preferenceKey()];
       updateDose();
     });
@@ -320,6 +352,7 @@ async function main() {
     if (timer) return;
     recipeId = $('recipe-variant').value;
     selectedByBrewer[brewer] = recipeId;
+    $('temperature-f').value = preferredTemperature();
     $('dose').value = doses[preferenceKey()];
     updateDose();
   });
@@ -360,7 +393,8 @@ async function main() {
     void syncWakeLock();
   });
   $('finish').addEventListener('click', () => {
-    if (elapsed(timer) / 1000 < recipe.steps.at(-1).start && !confirm('Finish before all scheduled pours are complete?')) return;
+    const { index } = recipeProgress(recipe, elapsed(timer) / 1000, timer.manualCompletions);
+    if (index >= 0 && (recipe.hasManualSteps || index < recipe.steps.length - 1) && !confirm('Finish before all recipe steps are complete?')) return;
     timer = { ...pauseTimer(timer), status: 'finished' };
     if (brewId) terminalSave = queueBrew(`/api/brews/${brewId}`, 'PATCH', {
       status: 'completed', elapsedSeconds: Math.min(86400, Math.round(elapsed(timer) / 1000)), finishedAt: new Date().toISOString(),
@@ -369,6 +403,13 @@ async function main() {
     renderTimer();
     void syncWakeLock();
     $('reset').focus();
+  });
+  $('next-step').addEventListener('click', () => {
+    if (timer?.status !== 'running') return;
+    timer = { ...timer, manualCompletions: completeManualStep(recipe, elapsed(timer) / 1000, timer.manualCompletions) };
+    persist();
+    renderTimer();
+    if ($('next-step').hidden) $('finish').focus({ preventScroll: true });
   });
   function clearSession() {
     timer = null;
@@ -380,6 +421,8 @@ async function main() {
     brewer = definition.brewer;
     selectedByBrewer[brewer] = recipeId;
     recipe = createRecipe(definition, doses[recipeId] >= definition.min && doses[recipeId] <= definition.max ? doses[recipeId] : definition.dose);
+    temperatureF = preferredTemperature();
+    $('temperature-f').value = temperatureF;
     persist();
     renderRecipe();
     void syncWakeLock();
@@ -471,6 +514,7 @@ async function main() {
       doses[preferenceKey()] = brew.dose;
       notes[preferenceKey()] = brew.grindSetting;
       temperatureF = brew.temperatureF;
+      temperatures[recipeId] = temperatureF;
       $('temperature-f').value = temperatureF;
       recipe = createRecipe(definition);
       renderRecipe();

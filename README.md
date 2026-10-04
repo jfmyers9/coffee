@@ -5,7 +5,7 @@ A shared, mobile-first coffee service for your household. Keep a bean shelf, fol
 ## The experience
 
 - **Bean shelf:** roaster, coffee name, origin, process, variety, roast, tasting notes, purchase/roast/open dates, price, regular/decaf/half-caf, and a bag photo. A newly added bag becomes the default. Archive empty bags without losing history.
-- **Guided brewing:** choose beans and grams, get cumulative water targets, bloom/rest timing, Encore starting settings, and a temperature in **°F**. The timer survives reloads and attempts to keep the screen awake.
+- **Guided brewing:** choose beans and grams, get cumulative water targets, bloom/rest timing, Encore starting settings, and a temperature in **°F**. Recipe-specific temperatures and your overrides are remembered per recipe. Timed steps advance automatically; untimed hands-on steps wait for **Done → Continue**. The timer survives reloads and attempts to keep the screen awake.
 - **Automatic journal:** starting a timer records a brew. Finish or discard updates it automatically. Retrying a request never creates a second brew or double-counts beans. Recipe and coffee-name snapshots preserve what you used even if the bag is later edited.
 - **Mistakes/test brews:** use **Delete brew** on a completed or discarded journal entry. Confirm to permanently remove its results/servings and return its dose to the bag inventory. Finish or discard an active brew first. If you actually used the beans, keep the discarded record instead. Deletion requires a connection.
 - **Results:** optional 1–5 rating, taste, notes, actual water added, and individual household servings with milk choice. Repeat a past brew without manually copying its settings.
@@ -99,7 +99,7 @@ Water targets mean **water added**, not beverage yield. Tare once before brewing
 
 ### Japanese Iced V60
 
-Choose **V60 → Japanese Iced**. This recipe keeps its own remembered dose and grinder override, separate from hot V60, and is saved/repeated as an iced recipe in the journal.
+Choose **V60 → Japanese Iced**. This recipe keeps its own remembered dose, temperature, and grinder override, separate from hot V60, and is saved/repeated as an iced recipe in the journal.
 
 At the default **15 g coffee**, start at **203°F** and **Encore 13** (two clicks finer than the hot V60 starting suggestion; adjust to taste):
 
@@ -109,9 +109,27 @@ At the default **15 g coffee**, start at **203°F** and **Encore 13** (two click
 4. **1:00–1:20:** pour to **150 g**, about **3 g/s**.
 5. Let drain, aiming around **2:30**. Finish when drained, swirl to chill, and **top with ice to taste**.
 
-These timings are app starting points, not timings attributed to the original video. Hot water is 10× the bean dose and brewing ice is 5×: **150 g hot water + 75 g ice = 225 g combined**, a nominal 1:15 ratio **before topping ice**, not beverage yield. Only hot-water additions appear in pour targets and the journal's actual-water field. Ice must not be included when reading those targets. Weights round to whole grams; pour durations scale with dose to keep roughly the same flow rate. Bloom ends at 30 seconds, the inter-pour rest stays 10 seconds, and drawdown has a 70-second starting allowance. The temperature remains editable; switching recipes preserves your chosen water temperature.
+These timings are app starting points, not timings attributed to the original video. Hot water is 10× the bean dose and brewing ice is 5×: **150 g hot water + 75 g ice = 225 g combined**, a nominal 1:15 ratio **before topping ice**, not beverage yield. Only hot-water additions appear in pour targets and the journal's actual-water field. Ice must not be included when reading those targets. Weights round to whole grams; pour durations scale with dose to keep roughly the same flow rate. Bloom ends at 30 seconds, the inter-pour rest stays 10 seconds, and drawdown has a 70-second starting allowance. The temperature remains editable; switching recipes restores that recipe’s own temperature override or default.
 
 Existing saved brews and queued events without a variant remain hot recipes. No database migration is needed for this additive snapshot metadata.
+
+### Hoffmann French Press
+
+Choose **French Press** for James Hoffmann's technique, with attribution and a
+link to the original video below the recipe. Start with **30 g coffee, 500 g
+water, a medium grind, and freshly boiled water** (212°F at sea level).
+
+- Add the water; leave undisturbed until **4:00** on the brew clock.
+- Break the crust and skim. Tap **Done → Continue** when finished.
+- Leave undisturbed for **five minutes**, starting from that confirmation.
+- Serve gently without plunging; confirm when done, then **Finish brew**.
+
+The pour has a practical 30-second allowance; skim and serve have no artificial
+deadline. The guide contains **9:00 of timed steps plus hands-on time**.
+Hoffmann suggests five to eight minutes for settling; the recipe explains how
+to extend the rest. The clock includes manual work but excludes explicit pauses.
+For recipes with manual steps, progress tracks steps rather than a predicted
+total duration. Old active timers keep their saved definition and temperature.
 
 ## Persistence, backup, and limits
 
@@ -124,6 +142,7 @@ Existing saved brews and queued events without a variant remain hot recipes. No 
 - Best-effort screen wake lock while running; mobile OS restrictions may still suspend the page. No background audio/notifications or offline service worker. Keep the page visible.
 - Use one tab per brew. Web Locks protect outbox writes across tabs where supported, but live timer controls are not coordinated between tabs.
 - Deleted brew contents are removed from the database, journal, daily totals, and JSON export. Only the UUID and deletion timestamp remain to prevent delayed offline requests from recreating the entry. Confirmed deletion clears queued updates for that brew on retry; other brews are unaffected. Database backups made before deletion still contain the old record.
+- Temperatures are remembered per recipe. On upgrade, a non-default legacy global temperature is retained for the selected recipe only; the old implicit 203°F default yields to recipe defaults. An active brew always retains its temperature.
 - Recipe settings are locked during a brew. Discard or finish and choose Make another cup to change them.
 - Photos are resized in the browser to at most 1200 pixels and re-encoded as JPEG, removing source metadata. The server accepts JPEG/PNG/WebP signatures with a 2 MB decoded limit and stores bytes in Postgres, so no writable upload volume is required. Phone formats the browser cannot decode (such as some HEIC files) need conversion first.
 

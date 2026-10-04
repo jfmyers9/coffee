@@ -28,6 +28,7 @@ coffee:
   grind: Medium-fine
   texture: Adjust to taste.
   temperature: 195–205°F
+  temperatureF: 203
   order: 40
 ---
 
@@ -53,15 +54,18 @@ It is not included in the production menu unless copied here.
 
 ## Metadata
 
-All fields shown above are required except `order` (default 100).
+All fields shown above are required except `order` (default 100) and
+`temperatureF` (default 203 for older files).
 `id` and `brewer` are lowercase slugs; keep IDs stable after recording brews.
 Recipes sharing a brewer must use the same `brewerName`. Each recipe's
 `label` appears in its brewer's recipe selector and journal.
 
 - `min`, `max`, `dose`: grams, 0.1 g increments, within 0.1–100 g.
 - `grind`, `texture`: starting advice, overridable per recipe in the browser.
-- `temperature`: descriptive recommended range; the user's entered °F remains
-  independent and is not automatically changed when switching recipes.
+- `temperature`: descriptive recommended range.
+- `temperatureF`: numeric starting temperature, an integer from 140–212°F.
+  Switching recipes uses this default unless the user saved an override for
+  that recipe. Temperature overrides are remembered per recipe.
 - `order`: ascending menu order, then ID. The first recipe is the default.
 - Optional `icon` and `description`: brewer button presentation; the first
   recipe for that brewer supplies these.
@@ -69,13 +73,18 @@ Recipes sharing a brewer must use the same `brewerName`. Each recipe's
   Do not copy it into a new recipe.
 
 Unknown `coffee` fields are rejected to catch typos. Standard Cooklang metadata
-such as `title`, `source`, and `author` may also be included.
+such as `title`, `source`, and `author` may also be included. Optional top-level
+`author` and `source` are nonempty strings (up to 2000 characters, no control
+characters). `source` must be an absolute HTTP(S) URL without credentials.
+They appear as `author` and `source` on the API definition and in the UI.
 
 ## Instructions and ingredients
 
 Use **one paragraph per named section**. Line wrapping within that paragraph is
 fine. The first section must be `Prep`, the last `Finish`; they are untimed.
-Each intervening section is one timer step, with its section name as the title.
+Each intervening section is one brewing step, with its section name as the title.
+Include one timer for automatic advancement, or omit the timer for manual
+confirmation (for example, skimming a crust or serving the coffee).
 
 - Prep must contain exactly one `@coffee{15%g}` matching the default dose.
 - Brewing ice goes in one Prep quantity, e.g. `@ice{75%g}`. It contributes to the combined
@@ -116,20 +125,33 @@ Every timed section must contain **exactly one** Cooklang timer:
 An `until` timer uses the brew's elapsed clock, not wall time, and therefore
 respects pauses. Write its surrounding text accordingly: “Wait until … on the
 brew clock.” Other timer names and units are rejected.
+An `until` timer cannot follow any manual step: manual work takes an unknown
+amount of time. Use fixed or scaled durations after manual steps instead.
+
+Untimed interior sections wait for “Done → Continue,” never advance themselves,
+and have no countdown. The displayed timed duration excludes this manual work.
+For example:
+
+```cooklang
+= Skim =
+Break the crust and skim the foam. Continue when ready.
+
+= Settle =
+Leave undisturbed for ~{5%minutes}.
+```
 
 Validation evaluates **every supported dose**, checking that every step lasts
-at least one second, pours add at least one gram, and the timeline stays within
+at least one second when timed, pours add at least one gram, and the timed timeline stays within
 24 hours. This catches scaled pours that would overrun an `until` mark.
 
-Instructions can describe pressing, stirring, or other actions, but the engine
-only advances by elapsed time. Manual confirmation steps, arbitrary formulas,
+Instructions can describe pressing, stirring, or other actions. Arbitrary formulas,
 parallel timers, optional/hidden ingredients, ingredient references/aliases/notes, and general-purpose cooking
 recipes are not supported. Unsupported structures are rejected rather than
 partially executed. Comments use standard Cooklang `-- comment` syntax.
 
 ## Persistence and editing
 
-Dose/grinder preferences are keyed by recipe ID. Old browser preferences and
+Dose/grinder/temperature preferences are keyed by recipe ID. Old browser preferences and
 brewer/variant requests migrate automatically; no database migration is needed.
 Active local timers store their recipe definition, so editing a file cannot
 change an already-running timeline after reload. Journal entries retain the

@@ -59,8 +59,7 @@ test('unsupported or ambiguous authoring fails rather than silently losing instr
     ['@water{225%g}', '@milk{225%g}', /plain coffee, water, or ice/],
     ['~scaled{20%seconds}', '~scaled{0%seconds}', /positive numbers/],
     ['~scaled{20%seconds}', '~mystery{20%seconds}', /Timer name/],
-    ['~scaled{20%seconds}', '~{20%seconds} ~{10%seconds}', /exactly one timer/],
-    ['~scaled{20%seconds}', '20 seconds', /exactly one timer/],
+    ['~scaled{20%seconds}', '~{20%seconds} ~{10%seconds}', /at most one timer/],
     ['= Prep =', '= Preparation =', /First and last/],
     ['Stir gently and steep', 'Stir gently.\n\nSteep', /exactly one instruction paragraph/],
     ['~{90%seconds}', '~until{25%seconds}', /at 18.4 g/],
@@ -82,6 +81,54 @@ test('file revisions change version without changing recipe identity', () => {
   const after = parseRecipe(fixture.replace('Stir gently', 'Stir once'));
   assert.equal(before.id, after.id);
   assert.notEqual(before.version, after.version);
+});
+
+test('temperature defaults are numeric, bounded, and backwards compatible', () => {
+  assert.equal(parseRecipe(fixture).temperatureF, 203);
+  for (const value of [140, 203, 212]) {
+    assert.equal(parseRecipe(fixture.replace('coffee:', `coffee:\n  temperatureF: ${value}`)).temperatureF, value);
+  }
+  for (const value of ['139', '213', '203.5', '"203"', 'null', 'true']) {
+    assert.throws(() => parseRecipe(fixture.replace('coffee:', `coffee:\n  temperatureF: ${value}`)), /coffee.temperatureF/);
+  }
+  assert.equal(recipes.find(recipe => recipe.id === 'french-press-hoffmann').temperatureF, 212);
+});
+
+test('top-level attribution is optional, trimmed, and restricted to safe source links', () => {
+  const plain = parseRecipe(fixture);
+  assert.equal(plain.author, undefined);
+  assert.equal(plain.source, undefined);
+  const withMetadata = fields => fixture.replace('coffee:', `${fields}\ncoffee:`);
+  const credited = parseRecipe(withMetadata('author: "  Test Author  "\nsource: https://example.com/recipe'));
+  assert.equal(credited.author, 'Test Author');
+  assert.equal(credited.source, 'https://example.com/recipe');
+  assert.equal(parseRecipe(withMetadata('source: http://example.com/recipe')).source, 'http://example.com/recipe');
+  for (const source of ['javascript:alert(1)', 'data:text/html,test', '//example.com', '/relative', 'https://user:password@example.com', 'not a URL']) {
+    assert.throws(() => parseRecipe(withMetadata(`source: ${JSON.stringify(source)}`)), /source/);
+  }
+  for (const field of ['author', 'source']) {
+    for (const value of ['42', 'null', '[]', '" "', '"hello\\nworld"']) {
+      assert.throws(() => parseRecipe(withMetadata(`${field}: ${value}`)), new RegExp(field));
+    }
+  }
+  const frenchPress = recipes.find(recipe => recipe.id === 'french-press-hoffmann');
+  assert.equal(frenchPress.author, 'James Hoffmann');
+  assert.match(frenchPress.source, /^https:\/\/www.youtube.com\//);
+});
+
+test('untimed interior sections become manual steps; absolute timers after them are rejected', () => {
+  const source = fixture.replace('~{90%seconds}', 'as long as desired');
+  const definition = parseRecipe(source);
+  assert.equal(definition.steps[1].timer, null);
+  assert.equal(definition.steps[2].timer.seconds, 30);
+  const brew = createRecipe(definition);
+  assert.equal(brew.steps[1].manual, true);
+  assert.equal(brew.steps[1].end - brew.steps[1].start, 0);
+  assert.equal(brew.duration, 50);
+  assert.throws(() => parseRecipe(source.replace('~{30%seconds}', '~until{5%minutes}')), /until timer cannot follow a manual step/);
+  const frenchPress = recipes.find(recipe => recipe.id === 'french-press-hoffmann');
+  assert.deepEqual(frenchPress.steps.map(step => step.timer?.seconds ?? null), [30, 240, null, 300, null]);
+  assert.equal(createRecipe(frenchPress).duration, 540);
 });
 
 test('fixed Cooklang quantities stay fixed while ordinary quantities scale with dose', () => {

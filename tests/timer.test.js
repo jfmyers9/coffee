@@ -22,3 +22,17 @@ test('malformed timers cannot restore', () => {
   assert.ok(validTimer(startTimer(1000)));
   assert.ok(validTimer(pauseTimer(startTimer(1000), 2000)));
 });
+
+test('manual completion timestamps survive pause, resume, and serialization', () => {
+  const timer = { ...startTimer(1000), manualCompletions: [{ index: 2, seconds: 240 }] };
+  const paused = pauseTimer(timer, 301000);
+  assert.equal(elapsed(paused), 300000);
+  assert.deepEqual(paused.manualCompletions, timer.manualCompletions);
+  const restored = JSON.parse(JSON.stringify(resumeTimer(paused, 401000)));
+  assert.ok(validTimer(restored));
+  assert.equal(elapsed(restored, 411000), 310000);
+  assert.deepEqual(restored.manualCompletions, timer.manualCompletions);
+  for (const manualCompletions of [null, {}, [null], [{ index: -1, seconds: 2 }], [{ index: 1, seconds: -1 }], [{ index: 1, seconds: 2 }, { index: 1, seconds: 3 }], [{ index: 1, seconds: 2 }, { index: 2, seconds: 1 }]]) {
+    assert.ok(!validTimer({ ...timer, manualCompletions }));
+  }
+});

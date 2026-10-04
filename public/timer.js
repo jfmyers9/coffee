@@ -8,7 +8,7 @@ export function startTimer(now = Date.now()) {
 }
 
 export function pauseTimer(timer, now = Date.now()) {
-  return { status: 'paused', accumulated: elapsed(timer, now), startedAt: null };
+  return { ...timer, status: 'paused', accumulated: elapsed(timer, now), startedAt: null };
 }
 
 export function resumeTimer(timer, now = Date.now()) {
@@ -18,5 +18,9 @@ export function resumeTimer(timer, now = Date.now()) {
 export function validTimer(timer) {
   return timer && ['running', 'paused', 'finished'].includes(timer.status)
     && Number.isFinite(timer.accumulated) && timer.accumulated >= 0
+    && (timer.manualCompletions === undefined || (Array.isArray(timer.manualCompletions)
+      && timer.manualCompletions.every((item, i, items) => item && Number.isInteger(item.index) && item.index >= 0
+        && Number.isFinite(item.seconds) && item.seconds >= 0
+        && (i === 0 || (item.index > items[i - 1].index && item.seconds >= items[i - 1].seconds)))))
     && (timer.status !== 'running' || (Number.isFinite(timer.startedAt) && timer.startedAt > 0));
 }

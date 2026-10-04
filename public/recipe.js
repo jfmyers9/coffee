@@ -23,16 +23,17 @@ export function createRecipe(definition, dose = definition?.dose) {
   }).join('');
   let cursor = 0, cumulative = 0, previous = 0;
   const steps = definition.steps.map(step => {
-    const seconds = step.timer.mode === 'scaled' ? Math.round(step.timer.seconds * factor + 1e-9) : step.timer.seconds;
-    const duration = step.timer.mode === 'until' ? seconds - cursor : seconds;
+    const manual = step.timer == null;
+    const seconds = manual ? 0 : step.timer.mode === 'scaled' ? Math.round(step.timer.seconds * factor + 1e-9) : step.timer.seconds;
+    const duration = step.timer?.mode === 'until' ? seconds - cursor : seconds;
     cumulative += step.items.filter(item => item.type === 'ingredient' && item.name === 'water').reduce((sum, item) => sum + amount(item), 0);
     // Round cumulative totals, not individual pours, so rounding never loses water.
     const target = Math.round(cumulative + 1e-9);
     const added = target - previous;
     const pouring = step.items.some(item => item.type === 'ingredient' && item.name === 'water');
-    if (!Number.isFinite(duration) || duration < 1 || !Number.isFinite(target) || target < previous || (pouring && added < 1)) throw new RangeError(`Invalid timing or water target in "${step.title}" at ${dose} g.`);
-    const result = { title: step.title, start: cursor, end: cursor + duration, target, added, pouring,
-      rate: added / duration, instruction: render(step.items, duration, added) };
+    if (!Number.isFinite(duration) || (!manual && duration < 1) || !Number.isFinite(target) || target < previous || (pouring && added < 1)) throw new RangeError(`Invalid timing or water target in "${step.title}" at ${dose} g.`);
+    const result = { title: step.title, start: cursor, end: cursor + duration, target, added, pouring, manual,
+      rate: manual ? null : added / duration, instruction: render(step.items, duration, added) };
     cursor += duration;
     previous = target;
     return result;
@@ -44,14 +45,44 @@ export function createRecipe(definition, dose = definition?.dose) {
     brewer: definition.brewer, name: definition.brewerName, label: definition.label,
     variant: definition.legacyVariant ?? definition.id, size: definition.size,
     min: definition.min, max: definition.max, grind: definition.grind, texture: definition.texture,
-    temperature: definition.temperature, dose, water: previous, ice, totalWater: previous + ice,
+    temperature: definition.temperature, temperatureF: definition.temperatureF ?? 203,
+    ...(definition.author ? { author: definition.author } : {}),
+    ...(definition.source ? { source: definition.source } : {}),
+    dose, water: previous, ice, totalWater: previous + ice,
     ratio: Math.round((cumulative + unroundedIce) / dose * 100) / 100,
     prep: render(definition.prep), finishInstruction: render(definition.finish),
-    steps, duration: cursor, finish: cursor };
+    steps, hasManualSteps: steps.some(step => step.manual), duration: cursor, finish: cursor };
 }
 
-export function currentStep(recipe, seconds) {
-  return recipe.steps.findIndex(step => seconds < step.end);
+// Manual completion times use active elapsed seconds, just like the brew clock.
+// This derives the entire timeline without ticks or changing it during render.
+export function recipeProgress(recipe, seconds, completions = []) {
+  let offset = 0;
+  for (const [index, step] of recipe.steps.entries()) {
+    const start = step.start + offset;
+    if (step.manual) {
+      const completed = completions.find(item => item.index === index);
+      if (completed && Number.isFinite(completed.seconds) && completed.seconds >= start && completed.seconds <= seconds) {
+        offset = completed.seconds - step.end;
+        continue;
+      }
+      return { index, start, end: null, progress: index / recipe.steps.length };
+    }
+    const end = step.end + offset;
+    if (seconds < end) return { index, start, end, progress: recipe.hasManualSteps
+      ? (index + Math.max(0, (seconds - start) / (end - start))) / recipe.steps.length
+      : Math.max(0, seconds / recipe.duration) };
+  }
+  return { index: -1, start: recipe.duration + offset, end: null, progress: 1 };
+}
+
+export function completeManualStep(recipe, seconds, completions = []) {
+  const { index } = recipeProgress(recipe, seconds, completions);
+  return recipe.steps[index]?.manual ? [...completions, { index, seconds }] : completions;
+}
+
+export function currentStep(recipe, seconds, completions) {
+  return recipeProgress(recipe, seconds, completions).index;
 }
 
 export function formatTime(seconds) {
