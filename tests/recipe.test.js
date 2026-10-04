@@ -87,3 +87,32 @@ test('iced doses scale water and ice without treating ice as poured water', () =
   assert.throws(() => createRecipe('v60', 15, 'unknown'), RangeError);
   assert.deepEqual(createRecipe('v60', 20), createRecipe('v60', 20, 'hot'));
 });
+
+test('Hoffmann French press keeps the four-minute steep, settling rest, and no-plunge finish', () => {
+  const definition = resolveRecipe(recipes, { recipeId: 'french-press-hoffmann' });
+  const recipe = compile(definition);
+  assert.equal(recipe.brewer, 'french-press');
+  assert.equal(recipe.label, 'James Hoffmann');
+  assert.equal(recipe.dose, 30);
+  assert.equal(recipe.water, 500);
+  assert.equal(recipe.ice, 0);
+  assert.equal(recipe.grind, 'Medium');
+  assert.deepEqual(recipe.steps.map(step => [step.start, step.end, step.pouring]), [
+    [0, 30, true], [30, 240, false], [240, 270, false], [270, 570, false], [570, 600, false],
+  ]);
+  assert.equal(recipe.steps[currentStep(recipe, 240)].title, 'Break the crust and skim');
+  assert.match(recipe.steps[3].instruction, /five to eight minutes/);
+  assert.match(recipe.steps[4].instruction, /Do not push it down/);
+  assert.match(recipe.finishInstruction, /do not plunge/i);
+  assert.match(recipe.prep, /switching recipes does not change it/);
+
+  for (let tenths = definition.min * 10; tenths <= definition.max * 10; tenths++) {
+    const scaled = compile(definition, tenths / 10);
+    assert.equal(scaled.water, Math.round(tenths / 10 * 500 / 30));
+    assert.equal(scaled.steps.filter(step => step.pouring).length, 1);
+    assert.ok(scaled.steps.every(step => step.target === scaled.water));
+    assert.equal(scaled.steps[1].end, 240);
+    assert.equal(scaled.steps[3].end - scaled.steps[3].start, 300);
+    assert.equal(scaled.duration, 600);
+  }
+});

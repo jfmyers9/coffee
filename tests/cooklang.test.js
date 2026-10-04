@@ -10,14 +10,14 @@ import { createApp } from '../server.js';
 
 const fixture = await readFile(new URL('./fixtures/recipes/aeropress-steep.cook', import.meta.url), 'utf8');
 
-test('adding only a .cook file discovers a fourth recipe and exposes it over HTTP', async t => {
+test('adding only a .cook file discovers another recipe and exposes it over HTTP', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'coffee-recipes-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   for (const recipe of recipes) await copyFile(new URL(`../recipes/${recipe.id}.cook`, import.meta.url), join(directory, `${recipe.id}.cook`));
-  await writeFile(join(directory, 'fourth.cook'), fixture);
+  await writeFile(join(directory, 'additional.cook'), fixture);
   await writeFile(join(directory, 'ignored.txt'), 'not a recipe');
   const catalog = await loadRecipes(directory);
-  assert.equal(catalog.length, 4);
+  assert.equal(catalog.length, recipes.length + 1);
   const added = catalog.find(recipe => recipe.id === 'aeropress-steep');
   const brew = createRecipe(added, 18);
   assert.equal(brew.water, 270);

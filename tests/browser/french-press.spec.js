@@ -1,0 +1,34 @@
+import { test, expect } from '@playwright/test';
+
+test('Hoffmann French press is discovered and guides steep, skim, settle, and no-plunge serving', async ({ page }) => {
+  await page.clock.install({ time: new Date(Date.now() - 15 * 60 * 1000) });
+  await page.goto('/');
+  await page.getByRole('button', { name: /French Press/ }).click();
+  await expect(page.getByLabel('Coffee beans')).toHaveValue('30');
+  await expect(page.locator('#water')).toHaveText('500 g');
+  await expect(page.locator('#grind')).toHaveText('Medium');
+  await expect(page.locator('#prep')).toContainText('freshly boiled water');
+  await page.getByLabel('Coffee beans').fill('15');
+  await expect(page.locator('#water')).toHaveText('250 g');
+  await page.getByLabel('Coffee beans').fill('30');
+  await page.setViewportSize({ width: 320, height: 720 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Start brewing' }).click();
+  await expect(page.locator('#instruction-title')).toHaveText('Add all the water');
+  await page.clock.fastForward(30000);
+  await expect(page.locator('#instruction-title')).toHaveText('Steep undisturbed');
+  await page.clock.fastForward(210000);
+  await expect(page.locator('#instruction-title')).toHaveText('Break the crust and skim');
+  await page.clock.fastForward(30000);
+  await expect(page.locator('#instruction-title')).toHaveText('Let the grounds settle');
+  await page.reload();
+  await expect(page.locator('#instruction-title')).toHaveText('Let the grounds settle');
+  await expect(page.locator('#instruction')).toContainText('five to eight minutes');
+  await page.clock.fastForward(300000);
+  await expect(page.locator('#instruction-title')).toHaveText('Serve gently, do not plunge');
+  await expect(page.locator('#instruction')).toContainText('Do not push it down');
+  await expect(page.locator('#target')).toHaveText('500 g');
+  await page.clock.fastForward(30000);
+  await page.getByRole('button', { name: 'Finish brew', exact: true }).click();
+  await expect(page.locator('#instruction')).toContainText('do not plunge');
+});
