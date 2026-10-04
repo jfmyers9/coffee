@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../server.js';
+import { recipes, loadRecipes } from '../server/recipes.js';
 import { createPool, migrate } from '../server/db.js';
 
 // Browser tests get their own schema, never reset or mutate a shared app schema.
@@ -28,7 +29,8 @@ try {
   created = true;
   pool = createPool(url, { options: `-c search_path=${schema}` });
   await migrate(pool);
-  server = createApp({ pool, appOrigin: '' });
+  const examples = await loadRecipes(new URL('../tests/fixtures/recipes/', import.meta.url));
+  server = createApp({ pool, recipes: [...recipes, ...examples], appOrigin: '' });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(Number(process.env.PORT || 8087), '127.0.0.1', resolve);

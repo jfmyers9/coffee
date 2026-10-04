@@ -53,7 +53,7 @@ test('guided brew transitions, pauses, restores and finishes', async ({ page }) 
   await page.reload();
   await expect(page.locator('#instruction-title')).toHaveText('Pour 1');
   await page.clock.fastForward(200000);
-  await expect(page.locator('#instruction-title')).toHaveText('Let the last drops fall.');
+  await expect(page.locator('#instruction-title')).toHaveText('Complete the final step.');
   await page.getByRole('button', { name: 'Finish brew' }).click();
   await expect(page.locator('#instruction-title')).toHaveText('Enjoy your coffee.');
   await page.getByRole('button', { name: 'Make another cup' }).click();

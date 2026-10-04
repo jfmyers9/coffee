@@ -17,7 +17,7 @@ The app **does not calculate a safe bean dose or infer caffeine from coffee gram
 
 ## Run locally
 
-Requires Node.js 22+ and PostgreSQL 14+. No frontend build step. The only runtime dependency is `pg`.
+Requires Node.js 22+ and PostgreSQL 14+. No frontend build step. Runtime dependencies are `pg` and the official Cooklang parser (`@cooklang/cooklang`).
 
 ```sh
 npm ci
@@ -73,6 +73,12 @@ docker build -t coffee:local .
 COFFEE_IMAGE=coffee:local docker compose up -d --pull never
 ```
 
+## Authoring recipes
+
+Recipes live in [`recipes/*.cook`](recipes/). Add a file, run `npm run check:recipes`, then restart the app and reload the page. No recipe registry or JavaScript edit is required; brewers and recipe choices are discovered automatically. For Docker, rebuild the image to include the files.
+
+See the [authoring guide](recipes/README.md) for the supported Cooklang conventions and a complete example. The three original recipes are included; an AeroPress test fixture demonstrates an additional brewer using only a recipe file.
+
 ## The first recipes
 
 | | V60 02 | Chemex 6–8 cup |
@@ -86,7 +92,7 @@ COFFEE_IMAGE=coffee:local docker compose up -d --pull never
 | Remaining water | Three equal pours, 25s each, with 20s rests | Three equal pours, 35s each, with 20s rests |
 | Target total time | 3:30 | 4:30 |
 
-These are opinionated starting recipes for medium-roast beans, not manufacturer-certified or universally optimal settings. The Encore suggestions are for the **original Encore, not Encore ESP**. Calibration and beans vary. If a brew drains too slowly or tastes bitter/astringent, try coarser; if it drains too quickly or tastes sour/thin, try finer. Taste matters more than hitting the exact time. Save your preferred grinder setting separately for each brewer.
+These are opinionated starting recipes for medium-roast beans, not manufacturer-certified or universally optimal settings. The Encore suggestions are for the **original Encore, not Encore ESP**. Calibration and beans vary. If a brew drains too slowly or tastes bitter/astringent, try coarser; if it drains too quickly or tastes sour/thin, try finer. Taste matters more than hitting the exact time. Save your preferred grinder setting separately for each recipe.
 
 Water targets mean **water added**, not beverage yield. Tare once before brewing; don't tare between pours. Pour rates are suggested averages, not measurements. Never overflow the brewer to keep up with the timer: pause the guide if the bed is full. The timer does not auto-finish at the target drawdown time; tap Finish brew when draining is done.
 
@@ -110,7 +116,7 @@ Existing saved brews and queued events without a variant remain hot recipes. No 
 
 - Bags, photos, the default bag, brew history, recipe snapshots, and results live in Postgres and are shared across devices. Personal recipe input preferences and active timer controls remain browser-local; you cannot take over a running timer on another phone. Refresh/navigate to see another device's changes.
 - Automatic brew start/finish/discard events use a persistent browser outbox. If the network drops, keep the browser data: updates retry on reconnect, every 15 seconds, and via **Retry sync**. UUID-based idempotency avoids double records after a lost response. Unsynced events are not yet in the database and clearing browser data loses them.
-- Brew timestamps and entered parameters retain the original local values when replayed. If the first save was offline, the coffee-name/recipe snapshot is taken when Postgres receives it; edits to the bag made before that first sync may appear in the snapshot.
+- Brew timestamps and entered parameters retain the original local values when replayed. If the first save was offline, the coffee-name snapshot is taken when Postgres receives it; edits to the bag made before that first sync may appear in the snapshot. New clients send a recipe version: if that file changed before the first sync, the event stays queued rather than silently saving different instructions. Restore that file revision and restart to sync it. Sync pending brews before editing/removing recipes.
 - Bean and result forms require a successful server save; they show errors and preserve form input when a save fails. They are not an offline editing system.
 - If another device closes a brew first, a conflicting local status change is retained for review. **Use saved journal version** explicitly keeps the server record and removes the conflicting local event. Other brews can still sync independently.
 - Elapsed time uses timestamps rather than counting ticks, so reloads and background tabs catch up correctly. Pauses freeze the guide. Avoid changing the device clock mid-brew.

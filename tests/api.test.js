@@ -58,6 +58,32 @@ test('Postgres API integration', { skip: !databaseUrl && 'Set TEST_DATABASE_URL 
   const createBag = extra => ok('/api/bags', 'POST', bagInput(extra), 201);
   const createBrew = extra => ok('/api/brews', 'POST', brewInput(extra), 201);
 
+  await t.test('catalog recipes persist snapshots, reject stale starts, and retry after file removal', async () => {
+    const { api } = await import('../server/api.js');
+    const { parseRecipe } = await import('../server/recipes.js');
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(new URL('./fixtures/recipes/aeropress-steep.cook', import.meta.url), 'utf8');
+    const definition = parseRecipe(source);
+    const input = { id: randomUUID(), bagId: null, recipeId: definition.id, recipeVersion: definition.version,
+      dose: 18, temperatureF: 200, grindSetting: 'Custom 14' };
+    const start = (recipes, body) => api({ pool, recipes, method: 'POST', url: new URL('http://localhost/api/brews'), body });
+    const first = await start([definition], input);
+    assert.equal(first.status, 201);
+    assert.equal(first.data.brewer, 'aeropress');
+    assert.equal(first.data.recipe.label, 'Steep & Press');
+    assert.equal(first.data.water, 270);
+    const changed = parseRecipe(source.replace('~{90%seconds}', '~{100%seconds}'));
+    assert.deepEqual((await start([changed], input)).data, first.data);
+    assert.deepEqual((await start([], input)).data, first.data);
+    const staleId = randomUUID();
+    await assert.rejects(start([changed], { ...input, id: staleId }), error => error.status === 409);
+    assert.equal((await pool.query('SELECT id FROM brews WHERE id=$1', [staleId])).rowCount, 0);
+    await assert.rejects(start([definition], { ...input, id: randomUUID(), dose: 21 }), error => error.status === 400);
+    await assert.rejects(start([definition], { ...input, id: randomUUID(), brewer: 'v60' }), error => error.status === 400);
+    const updated = await start([changed], { ...input, id: randomUUID(), recipeVersion: changed.version });
+    assert.equal(updated.data.recipe.duration, first.data.recipe.duration + 10);
+  });
+
   await t.test('iced variants persist water and ice separately and preserve legacy hot retries', async () => {
     const input = brewInput({ dose: 15, variant: 'japanese-iced' });
     const iced = await ok('/api/brews', 'POST', input, 201);
@@ -74,7 +100,7 @@ test('Postgres API integration', { skip: !databaseUrl && 'Set TEST_DATABASE_URL 
     const legacyInput = brewInput();
     const hot = await ok('/api/brews', 'POST', legacyInput, 201);
     // Simulate an already saved pre-variant request, still waiting in an old outbox.
-    await pool.query("UPDATE brews SET request=request-'variant' WHERE id=$1", [hot.id]);
+    await pool.query("UPDATE brews SET request=(request-'variant'-'recipeId') || jsonb_build_object('brewer','v60') WHERE id=$1", [hot.id]);
     assert.deepEqual(await ok('/api/brews', 'POST', legacyInput), hot);
     assert.deepEqual(await ok('/api/brews', 'POST', { ...legacyInput, variant: 'hot' }), hot);
   });

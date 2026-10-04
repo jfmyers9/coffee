@@ -7,7 +7,8 @@
     "start": "node server.js",
     "test": "node --test tests/*.test.js",
     "test:e2e": "playwright test",
-    "check": "npm test && npm run test:e2e"
+    "check": "npm test && npm run test:e2e",
+    "check:recipes": "node scripts/check-recipes.js"
   },
   "engines": {
     "node": ">=22"
@@ -16,6 +17,7 @@
     "@playwright/test": "1.63.0"
   },
   "dependencies": {
+    "@cooklang/cooklang": "0.18.7",
     "pg": "^8.23.1"
   }
 }

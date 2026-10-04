@@ -23,18 +23,15 @@
     <div class="layout">
       <section class="card setup" aria-labelledby="setup-heading">
         <div class="section-heading"><span class="number">01</span><h2 id="setup-heading">Make it yours</h2></div>
-        <fieldset id="settings">
+        <fieldset id="settings" disabled>
           <legend class="sr-only">Recipe settings</legend>
           <label class="field-label" for="brew-bag">On the counter</label>
           <select id="brew-bag"><option value="">No bag selected</option></select>
           <p id="brew-bag-hint" class="hint">Choose a bag to connect this brew to your bean shelf.</p>
           <a class="inline-link" href="#beans">Add a new bag →</a>
           <p class="field-label" id="brewer-label">Your brewer</p>
-          <div class="brewers" role="group" aria-labelledby="brewer-label">
-            <button type="button" data-brewer="v60" aria-pressed="true"><span class="brewer-icon" aria-hidden="true">▽</span><strong>V60</strong><small>A clean, bright cup</small></button>
-            <button type="button" data-brewer="chemex" aria-pressed="false"><span class="brewer-icon" aria-hidden="true">⋈</span><strong>Chemex</strong><small>Smooth &amp; easygoing</small></button>
-          </div>
-          <div id="variant-field"><label class="field-label" for="recipe-variant">V60 recipe</label><select id="recipe-variant"><option value="hot">Hot</option><option value="japanese-iced">Japanese Iced</option></select><p class="hint">A separate recipe and grinder setting for each style.</p></div>
+          <div id="brewer-options" class="brewers" role="group" aria-labelledby="brewer-label"></div>
+          <div id="variant-field"><label id="recipe-label" class="field-label" for="recipe-variant">Recipe</label><select id="recipe-variant"></select><p class="hint">A separate dose and grinder setting for each recipe.</p></div>
           <label class="field-label" for="dose">Coffee beans</label>
           <div class="dose-control"><button type="button" id="less" aria-label="Use fewer beans">−</button><div><input id="dose" type="number" inputmode="decimal" min="12" max="30" step="0.1" value="20" aria-describedby="dose-hint dose-error"><span>g</span></div><button type="button" id="more" aria-label="Use more beans">+</button></div>
           <p id="dose-hint" class="hint"></p><p id="dose-error" class="error" role="alert" hidden></p>
@@ -44,7 +41,7 @@
           <div class="recipe-stats"><div><span class="small-label" id="water-label">WATER</span><strong id="water"></strong></div><div><span class="small-label" id="ratio-label">RATIO</span><strong id="ratio">1 : 16</strong></div><div><span class="small-label">TEMPERATURE</span><strong id="temperature"></strong></div></div>
           <p id="ice-guide" class="notice" hidden></p>
           <div class="grind"><span aria-hidden="true">✳</span><div><span class="small-label">GRIND GUIDE</span><h3 id="grind"></h3><p id="texture"></p></div></div>
-          <details><summary>Your grinder setting <span>optional</span></summary><label for="grind-note">Save a dial setting for this brewer</label><input id="grind-note" type="text" maxlength="80" placeholder="e.g. grinder model · dial setting"><p class="hint">Settings vary by grinder and beans. Saved only in this browser.</p></details>
+          <details><summary>Your grinder setting <span>optional</span></summary><label for="grind-note">Save a dial setting for this recipe</label><input id="grind-note" type="text" maxlength="80" placeholder="e.g. grinder model · dial setting"><p class="hint">Settings vary by grinder and beans. Saved only in this browser.</p></details>
         </fieldset>
         <div class="prep"><h3>Before you begin</h3><p id="prep"></p><p>Heat your water, put the brewer on your scale, and tare to zero. Keep the cumulative water weight on the scale—don't tare between pours.</p></div>
       </section>
@@ -58,7 +55,7 @@
           <p id="instruction"></p>
           <div class="pour-target"><div><span id="target-label" class="small-label">FIRST SCALE TARGET</span><strong id="target"></strong></div><div><span class="small-label" id="rate-label">POUR RATE</span><strong id="rate"></strong></div></div>
           <progress id="progress" value="0" max="100" aria-label="Brew progress"></progress>
-          <button class="primary" id="start">Start brewing <span aria-hidden="true">→</span></button>
+          <button class="primary" id="start" disabled>Start brewing <span aria-hidden="true">→</span></button>
           <div class="active-controls" id="active-controls" hidden><button id="pause" class="primary">Pause</button><button id="finish" class="secondary">Finish brew</button></div>
           <button id="reset" class="text-button" hidden>Discard &amp; start over</button>
           <button id="rate-brew" class="secondary" hidden>Rate this cup &amp; log servings</button>

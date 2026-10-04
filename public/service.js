@@ -73,7 +73,7 @@ async function resizePhoto(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export async function initService({ onBrewAgain = () => {}, onBagsChanged = () => {}, onServiceChange = () => {}, onNavigate = () => {}, getActiveBrewId = () => null } = {}) {
+export async function initService({ recipes = [], onBrewAgain = () => {}, onBagsChanged = () => {}, onServiceChange = () => {}, onNavigate = () => {}, getActiveBrewId = () => null } = {}) {
   const beansRoot = document.getElementById('beans-content');
   const journalRoot = document.getElementById('journal-content');
   const brewSelect = document.getElementById('brew-bag');
@@ -260,7 +260,7 @@ export async function initService({ onBrewAgain = () => {}, onBagsChanged = () =
 
   const filters = node('div', null, 'service-toolbar');
   const filterBag = field(filters, 'Coffee bag', 'bagId', '', 'text', [['', 'All bags']]);
-  const filterBrewer = field(filters, 'Brewer', 'brewer', '', 'text', [['', 'All brewers'], ['v60', 'V60'], ['chemex', 'Chemex']]);
+  const filterBrewer = field(filters, 'Brewer', 'brewer', '', 'text', [['', 'All brewers'], ...new Map(recipes.map(item => [item.brewer, item.brewerName])).entries()]);
   const filterStatus = field(filters, 'Status', 'status', '', 'text', [['', 'All statuses'], ['completed', 'Completed'], ['brewing', 'Brewing'], ['discarded', 'Discarded']]);
   const exportLink = node('a', 'Export all data', 'secondary');
   exportLink.href = '/api/export';
@@ -306,8 +306,8 @@ export async function initService({ onBrewAgain = () => {}, onBagsChanged = () =
       card.append(node('h3', bagName(snapshot)), node('span', brew.status, 'badge'));
       const date = new Date(brew.startedAt || brew.createdAt);
       card.append(node('p', Number.isNaN(date.getTime()) ? 'Date not recorded' : date.toLocaleString(), 'muted'));
-      const iced = (brew.variant ?? brew.recipe?.variant) === 'japanese-iced';
-      card.append(node('p', `${brew.brewer === 'v60' ? 'V60' : brew.brewer === 'chemex' ? 'Chemex' : brew.brewer} · ${iced ? 'Japanese Iced' : 'Hot'} · ${brew.dose} g coffee · ${brew.water} g ${iced ? 'hot ' : ''}water${brew.temperatureF != null ? ` · ${brew.temperatureF}°F` : ''}${brew.grindSetting != null ? ` · grind ${brew.grindSetting}` : ''}`));
+      const iced = (brew.ice ?? brew.recipe?.ice ?? 0) > 0;
+      card.append(node('p', `${brew.recipe?.name ?? brew.brewer} · ${brew.recipe?.label ?? (iced ? 'Japanese Iced' : 'Hot')} · ${brew.dose} g coffee · ${brew.water} g ${iced ? 'hot ' : ''}water${brew.temperatureF != null ? ` · ${brew.temperatureF}°F` : ''}${brew.grindSetting != null ? ` · grind ${brew.grindSetting}` : ''}`));
       if (iced) card.append(node('p', `${brew.ice ?? brew.recipe.ice} g brewing ice · ${brew.totalWater ?? brew.recipe.totalWater} g combined water + ice, before topping ice`, 'muted'));
       if (snapshot?.caffeineType) card.append(node('p', snapshot.caffeineType, 'tag'));
       if (brew.elapsedSeconds != null) card.append(node('p', `${Math.floor(brew.elapsedSeconds / 60)}:${String(Math.floor(brew.elapsedSeconds % 60)).padStart(2, '0')} elapsed`, 'muted'));
@@ -351,7 +351,7 @@ export async function initService({ onBrewAgain = () => {}, onBagsChanged = () =
       const grid = node('div', null, 'form-grid');
       const rating = field(grid, 'Rating (optional)', 'rating', brew.rating, 'text', [['', 'Not rated'], ...[1, 2, 3, 4, 5].map(value => [String(value), `${value}/5`])]);
       const taste = field(grid, 'Taste (optional)', 'taste', brew.taste, 'text', [['', 'Not recorded'], ...['balanced', 'sour', 'bitter', 'weak', 'strong'].map(value => [value, value])]);
-      const water = field(grid, brew.variant === 'japanese-iced' ? 'Actual hot water added (g, excludes ice, optional)' : 'Actual water added (g, optional)', 'waterActual', brew.waterActual, 'number');
+      const water = field(grid, (brew.ice ?? brew.recipe?.ice ?? 0) > 0 ? 'Actual hot water added (g, excludes ice, optional)' : 'Actual water added (g, optional)', 'waterActual', brew.waterActual, 'number');
       water.max = '2000';
       const notes = field(grid, 'Brew notes', 'notes', brew.notes, 'textarea');
       notes.maxLength = 5000;

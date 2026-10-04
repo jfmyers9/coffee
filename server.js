@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { createPool, migrate } from './server/db.js';
 import { api } from './server/api.js';
+import { recipes as defaultRecipes } from './server/recipes.js';
 import { HttpError } from './server/validation.js';
 
 // Explicit assets prevent accidental exposure of source, environment, or database files.
@@ -43,7 +44,7 @@ function json(res, status, data, head = false) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(head ? undefined : JSON.stringify(data));
 }
-export function createApp({ pool, appOrigin = process.env.APP_ORIGIN } = {}) {
+export function createApp({ pool, recipes = defaultRecipes, appOrigin = process.env.APP_ORIGIN } = {}) {
   if (!pool) throw new Error('A database pool is required');
   if (appOrigin) {
     const parsed = new URL(appOrigin);
@@ -67,7 +68,7 @@ export function createApp({ pool, appOrigin = process.env.APP_ORIGIN } = {}) {
           checkWrite(req, appOrigin);
           body = await readBody(req, /^\/api\/bags\/[^/]+\/photo$/.test(url.pathname) ? 3 * 1024 * 1024 : 64 * 1024);
         }
-        const result = await api({ pool, method: req.method === 'HEAD' ? 'GET' : req.method, url, body });
+        const result = await api({ pool, recipes, method: req.method === 'HEAD' ? 'GET' : req.method, url, body });
         if (result.download) res.setHeader('Content-Disposition', 'attachment; filename="coffee-export.json"');
         if (result.bytes) {
           res.writeHead(200, { 'Content-Type': result.type, 'Cache-Control': 'no-store' });

@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BREWERS, createRecipe, currentStep, formatTime } from '../public/recipe.js';
+import { createRecipe as compile, resolveRecipe, currentStep, formatTime } from '../public/recipe.js';
+import { recipes } from '../server/recipes.js';
+const createRecipe = (brewer, dose, variant = 'hot') => compile(resolveRecipe(recipes, { brewer, variant }), dose);
+const BREWERS = Object.fromEntries(recipes.filter(item => item.legacyVariant === 'hot').map(item => [item.brewer, { ...item, finish: compile(item).duration }]));
 
 for (const [brewer, config] of Object.entries(BREWERS)) {
   test(`${brewer}: every supported dose conserves water with contiguous positive steps`, () => {
@@ -58,7 +61,7 @@ test('Japanese iced separates ice from cumulative hot-water targets', () => {
   assert.equal(recipe.grind, 'Encore · 13');
   assert.equal(recipe.duration, 150);
   assert.equal(recipe.finish, recipe.duration);
-  assert.equal(recipe.pourSeconds, 20);
+  assert.equal(recipe.steps[2].end - recipe.steps[2].start, 20);
   assert.deepEqual(recipe.steps.filter(step => step.pouring).map(step => [step.start, step.end, step.target, step.rate]), [[0, 10, 30, 3], [30, 50, 90, 3], [60, 80, 150, 3]]);
   assert.equal(recipe.steps[currentStep(recipe, 30)].title, 'Pour 1');
   assert.equal(recipe.steps[currentStep(recipe, 60)].target, 150);

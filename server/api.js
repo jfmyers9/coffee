@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { createRecipe } from '../public/recipe.js';
+import { createRecipe, resolveRecipe } from '../public/recipe.js';
 import { transaction } from './db.js';
 import { HttpError, invalid, keys, uuid, number, string, choice, timestamp, bagInput, brewPatch, photoInput } from './validation.js';
 
@@ -20,11 +20,26 @@ async function listBags(client) {
   return { bags: bags.rows.map(presentBag), defaultBagId: settings.rows[0].default_bag_id };
 }
 function brewInput(body) {
-  keys(body, ['id', 'bagId', 'brewer', 'variant', 'dose', 'temperatureF', 'grindSetting', 'startedAt']);
-  const input = { id: uuid(body.id), bagId: body.bagId == null ? null : uuid(body.bagId), brewer: choice(body.brewer, 'brewer', ['v60', 'chemex']), dose: number(body.dose, 'dose', 0, 45), temperatureF: number(body.temperatureF, 'temperatureF', 140, 212), grindSetting: string(body.grindSetting, 'grindSetting', 80, true), startedAt: body.startedAt === undefined ? null : timestamp(body.startedAt) };
-  input.variant = body.variant === undefined ? 'hot' : choice(body.variant, 'variant', ['hot', 'japanese-iced']);
-  try { return { input, recipe: createRecipe(input.brewer, input.dose, input.variant) }; }
-  catch { invalid('Invalid brewer dose (use supported range and 0.1 g increments)'); }
+  keys(body, ['id', 'bagId', 'recipeId', 'recipeVersion', 'brewer', 'variant', 'dose', 'temperatureF', 'grindSetting', 'startedAt']);
+  let recipeId = body.recipeId;
+  if (recipeId === undefined) {
+    // Legacy outboxes identify one of the original recipes by brewer/variant.
+    if (!['v60', 'chemex'].includes(body.brewer) || !['hot', 'japanese-iced'].includes(body.variant ?? 'hot') || (body.brewer === 'chemex' && body.variant && body.variant !== 'hot')) invalid('Unknown recipe');
+    recipeId = `${body.brewer}-${body.variant ?? 'hot'}`;
+  }
+  recipeId = string(recipeId, 'recipeId', 80, true);
+  if (!/^[a-z][a-z0-9-]*$/.test(recipeId)) invalid('Invalid recipeId');
+  const input = { id: uuid(body.id), bagId: body.bagId == null ? null : uuid(body.bagId),
+    recipeId, dose: number(body.dose, 'dose', 0.1, 100),
+    temperatureF: number(body.temperatureF, 'temperatureF', 140, 212),
+    grindSetting: string(body.grindSetting, 'grindSetting', 80, true),
+    startedAt: body.startedAt === undefined ? null : timestamp(body.startedAt) };
+  if (body.recipeVersion !== undefined) input.recipeVersion = string(body.recipeVersion, 'recipeVersion', 64, true);
+  return input;
+}
+function normalizeLegacyRequest(request) {
+  const { brewer, variant, ...rest } = request;
+  return { recipeId: `${brewer}-${variant ?? 'hot'}`, ...rest };
 }
 function pagination(value, fallback, max) {
   if (value === null) return fallback;
@@ -32,8 +47,9 @@ function pagination(value, fallback, max) {
   return Number(value);
 }
 
-export async function api({ pool, method, url, body }) {
+export async function api({ pool, recipes, method, url, body }) {
   const path = url.pathname;
+  if (path === '/api/recipes' && method === 'GET') return { data: { recipes } };
   if (path === '/api/bags' && method === 'GET') return { data: await listBags(pool) };
   if (path === '/api/bags' && method === 'POST') {
     const data = { ...bagInput(body), id: randomUUID(), createdAt: new Date().toISOString() };
@@ -79,16 +95,24 @@ export async function api({ pool, method, url, body }) {
     }
   }
   if (path === '/api/brews' && method === 'POST') {
-    const { input, recipe } = brewInput(body);
+    const input = brewInput(body);
     return transaction(pool, async client => {
       // Serializing the client UUID avoids a double inventory debit even for concurrent retries.
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [input.id]);
       const existing = await client.query('SELECT request,data FROM brews WHERE id=$1', [input.id]);
       if (existing.rowCount) {
         // Older queued requests and persisted records predate recipe variants.
-        if (!isDeepStrictEqual({ variant: 'hot', ...existing.rows[0].request }, input)) throw new HttpError(409, 'Brew ID already used with different start data');
+        if (!isDeepStrictEqual(normalizeLegacyRequest(existing.rows[0].request), input) || (body.brewer !== undefined && body.brewer !== existing.rows[0].data.brewer) || (body.variant !== undefined && body.variant !== (existing.rows[0].data.variant ?? 'hot'))) throw new HttpError(409, 'Brew ID already used with different start data');
         return { data: existing.rows[0].data };
       }
+      let definition, recipe;
+      try {
+        definition = resolveRecipe(recipes, input);
+        recipe = createRecipe(definition, input.dose);
+      } catch { invalid('Unknown recipe or invalid dose (use supported range and 0.1 g increments)'); }
+      if (body.brewer !== undefined && body.brewer !== recipe.brewer) invalid('Recipe does not match brewer');
+      if (body.variant !== undefined && body.variant !== recipe.variant) invalid('Recipe does not match variant');
+      if (input.recipeVersion && input.recipeVersion !== recipe.version) throw new HttpError(409, 'Recipe changed since this brew was prepared. Restore its prior file revision to sync this queued brew; reload before preparing a new brew.');
       let bagSnapshot = null;
       if (input.bagId) {
         const bag = await client.query('SELECT data FROM bags WHERE id=$1 FOR SHARE', [input.bagId]);
@@ -96,7 +120,7 @@ export async function api({ pool, method, url, body }) {
         const { name, roaster, caffeineType } = bag.rows[0].data;
         bagSnapshot = { name, roaster, caffeineType };
       }
-      const data = { ...input, startedAt: input.startedAt ?? new Date().toISOString(), recipe, water: recipe.water, ice: recipe.ice, totalWater: recipe.totalWater, bagSnapshot, status: 'brewing', elapsedSeconds: 0, finishedAt: null, rating: null, taste: null, notes: '', waterActual: null, servings: [] };
+      const data = { ...input, brewer: recipe.brewer, variant: recipe.variant, startedAt: input.startedAt ?? new Date().toISOString(), recipe, water: recipe.water, ice: recipe.ice, totalWater: recipe.totalWater, bagSnapshot, status: 'brewing', elapsedSeconds: 0, finishedAt: null, rating: null, taste: null, notes: '', waterActual: null, servings: [] };
       await client.query('INSERT INTO brews(id,bag_id,dose,started_at,status,request,data) VALUES($1,$2,$3,$4,$5,$6,$7)', [data.id, data.bagId, data.dose, data.startedAt, data.status, input, data]);
       return { status: 201, data };
     });
@@ -107,7 +131,7 @@ export async function api({ pool, method, url, body }) {
     const offset = pagination(params.get('offset'), 0, 10000000);
     if (!limit) invalid('limit must be positive');
     const values = [], filters = [];
-    for (const [field, column, validate] of [ ['bagId', 'bag_id', uuid], ['brewer', "data->>'brewer'", value => choice(value, 'brewer', ['v60', 'chemex'])], ['status', 'status', value => choice(value, 'status', ['brewing', 'completed', 'discarded'])] ]) {
+    for (const [field, column, validate] of [ ['bagId', 'bag_id', uuid], ['brewer', "data->>'brewer'", value => string(value, 'brewer', 80, true)], ['status', 'status', value => choice(value, 'status', ['brewing', 'completed', 'discarded'])] ]) {
       if (params.get(field)) { values.push(validate(params.get(field))); filters.push(`${column}=$${values.length}`); }
     }
     const where = filters.length ? ` WHERE ${filters.join(' AND ')}` : '';

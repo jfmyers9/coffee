@@ -8,6 +8,7 @@ COPY --chown=node:node server.js ./
 COPY --chown=node:node server ./server
 COPY --chown=node:node migrations ./migrations
 COPY --chown=node:node public ./public
+COPY --chown=node:node recipes ./recipes
 USER node
 ENV HOST=0.0.0.0 PORT=8080
 EXPOSE 8080

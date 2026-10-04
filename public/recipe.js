@@ -1,63 +1,53 @@
-export const BREWERS = {
-  v60: {
-    name: 'V60', size: '02', min: 12, max: 30, dose: 20, ratio: 16,
-    grind: 'Encore · 15', texture: 'Start medium-fine, a little finer than table salt. Original Encore, not ESP. Adjust to taste; calibration varies.',
-    temperature: '201–205°F', bloomEnd: 45, pourSeconds: 25, restSeconds: 20,
-    finish: 210,
-    prep: 'Rinse the filter, warm the brewer, then discard the rinse water. Add grounds and make a small well in the center.',
-  },
-  chemex: {
-    name: 'Chemex', size: '6–8 cup', min: 20, max: 45, dose: 30, ratio: 16,
-    grind: 'Encore · 20', texture: 'Start medium-coarse, like coarse sand. Original Encore, not ESP. Adjust to taste; calibration varies.',
-    temperature: '201–205°F', bloomEnd: 45, pourSeconds: 35, restSeconds: 20,
-    finish: 270,
-    prep: 'Place the three-layer side of the filter against the spout. Rinse, discard the rinse water, and add your grounds.',
-  },
-};
-
-export function recipeConfig(brewer, variant = 'hot') {
-  if (!Object.hasOwn(BREWERS, brewer) || !['hot', 'japanese-iced'].includes(variant) || (variant !== 'hot' && brewer !== 'v60')) throw new RangeError('Unsupported recipe variant.');
-  if (variant === 'hot') return BREWERS[brewer];
-  return { ...BREWERS.v60, dose: 15, ratio: 15, grind: 'Encore · 13',
-    texture: 'A starting point, two clicks finer than the hot V60 suggestion. Adjust to your beans and grinder calibration.',
-    bloomEnd: 30, restSeconds: 10,
-    prep: 'Rinse the filter and discard the rinse water before adding ice. Add the brewing ice to the carafe, assemble the brewer with grounds, then tare the scale. Pour targets exclude the ice.',
-  };
+// Pure shared engine. Cooklang parsing and file discovery happen on the server.
+export function resolveRecipe(recipes, { recipeId, brewer, variant = 'hot' } = {}) {
+  const definition = recipeId
+    ? recipes.find(item => item.id === recipeId)
+    : recipes.find(item => item.brewer === brewer && item.legacyVariant === variant);
+  if (!definition) throw new RangeError('Recipe is no longer available.');
+  return definition;
 }
 
-export function createRecipe(brewer, dose, variant = 'hot') {
-  const config = recipeConfig(brewer, variant);
-  if (!config || !Number.isFinite(dose) || dose < config.min || dose > config.max || Math.abs(dose * 10 - Math.round(dose * 10)) > 1e-8) {
-    throw new RangeError('Choose a supported brewer and a dose in range (0.1 g increments).');
+export function createRecipe(definition, dose = definition?.dose) {
+  if (!definition || typeof definition.id !== 'string' || !Number.isFinite(definition.min) || !Number.isFinite(definition.max) || !Number.isFinite(definition.dose) || definition.dose <= 0 || !Number.isFinite(dose) || dose < definition.min || dose > definition.max || Math.abs(dose * 10 - Math.round(dose * 10)) > 1e-8) {
+    throw new RangeError('Choose a supported recipe and a dose in range (0.1 g increments).');
   }
-  const iced = variant === 'japanese-iced';
-  const water = Math.round(dose * (iced ? 10 : config.ratio));
-  const ice = iced ? Math.round(dose * 5) : 0;
-  const bloom = Math.round(dose * (iced ? 2 : 3));
-  const pourCount = iced ? 2 : 3;
-  const pourSeconds = iced ? Math.round(20 * dose / 15) : config.pourSeconds;
-  const finish = iced ? config.bloomEnd + 2 * pourSeconds + config.restSeconds + 70 : config.finish;
-  const steps = [];
-  let cursor = 0;
-  let previous = 0;
-  function add(title, duration, target, instruction, pouring = false) {
-    steps.push({ title, start: cursor, end: cursor + duration, target,
-      added: pouring ? target - previous : 0,
-      rate: pouring ? (target - previous) / duration : 0, instruction, pouring });
+  const factor = dose / definition.dose;
+  const amount = item => item.amount * (item.fixed ? 1 : factor);
+  const render = (items, duration, added) => items.map(item => {
+    if (item.type === 'text') return item.text;
+    if (item.type === 'cookware') return item.name;
+    if (item.type === 'timer') return `${item.mode === 'until' ? item.seconds : duration} seconds`;
+    const grams = item.name === 'water' && added != null ? added
+      : item.name === 'ice' ? Math.round(amount(item) + 1e-9) : Math.round(amount(item) * 10) / 10;
+    return `${grams} g ${item.name}`;
+  }).join('');
+  let cursor = 0, cumulative = 0, previous = 0;
+  const steps = definition.steps.map(step => {
+    const seconds = step.timer.mode === 'scaled' ? Math.round(step.timer.seconds * factor + 1e-9) : step.timer.seconds;
+    const duration = step.timer.mode === 'until' ? seconds - cursor : seconds;
+    cumulative += step.items.filter(item => item.type === 'ingredient' && item.name === 'water').reduce((sum, item) => sum + amount(item), 0);
+    // Round cumulative totals, not individual pours, so rounding never loses water.
+    const target = Math.round(cumulative + 1e-9);
+    const added = target - previous;
+    const pouring = step.items.some(item => item.type === 'ingredient' && item.name === 'water');
+    if (!Number.isFinite(duration) || duration < 1 || !Number.isFinite(target) || target < previous || (pouring && added < 1)) throw new RangeError(`Invalid timing or water target in "${step.title}" at ${dose} g.`);
+    const result = { title: step.title, start: cursor, end: cursor + duration, target, added, pouring,
+      rate: added / duration, instruction: render(step.items, duration, added) };
     cursor += duration;
     previous = target;
-  }
-  add('Bloom', iced ? Math.round(10 * dose / 15) : 15, bloom, 'Wet all the grounds, then give the brewer a gentle swirl.', true);
-  add('Let it bloom', config.bloomEnd - cursor, bloom, 'Let the coffee release its gas. No water needed.');
-  for (let i = 1; i <= pourCount; i++) {
-    const target = Math.round(bloom + (water - bloom) * i / pourCount);
-    add(`Pour ${i}`, pourSeconds, target, 'Pour slow circles, from the center outward. Avoid the filter walls.', true);
-    if (i < pourCount) add('Let it settle', config.restSeconds, target, 'Give the water time to drain through the bed.');
-  }
-  add('Draw down', finish - cursor, water, 'Gently swirl to level the bed. Let the remaining water drain.');
-  return { ...config, brewer, variant, dose, water, ice, finish, pourSeconds, totalWater: water + ice,
-    finishInstruction: iced ? 'Remove the brewer, swirl to chill, then top with ice to taste. Extra serving ice is not included in the recipe ratio.' : 'Swirl, sip, and tell your journal how it went.',
-    steps, duration: cursor };
+    return result;
+  });
+  if (!steps.length || !previous || cursor > 86400) throw new RangeError('Recipe needs poured water and a timeline under 24 hours.');
+  const unroundedIce = definition.prep.filter(item => item.type === 'ingredient' && item.name === 'ice').reduce((sum, item) => sum + amount(item), 0);
+  const ice = Math.round(unroundedIce + 1e-9);
+  return { id: definition.id, recipeId: definition.id, version: definition.version,
+    brewer: definition.brewer, name: definition.brewerName, label: definition.label,
+    variant: definition.legacyVariant ?? definition.id, size: definition.size,
+    min: definition.min, max: definition.max, grind: definition.grind, texture: definition.texture,
+    temperature: definition.temperature, dose, water: previous, ice, totalWater: previous + ice,
+    ratio: Math.round((cumulative + unroundedIce) / dose * 100) / 100,
+    prep: render(definition.prep), finishInstruction: render(definition.finish),
+    steps, duration: cursor, finish: cursor };
 }
 
 export function currentStep(recipe, seconds) {
