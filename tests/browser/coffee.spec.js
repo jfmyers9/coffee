@@ -61,6 +61,22 @@ test('guided brew transitions, pauses, restores and finishes', async ({ page }) 
   await expect(page.locator('#clock')).toHaveText('0:00');
 });
 
+test('step durations and countdown use minutes and seconds', async ({ page }) => {
+  await page.clock.install({ time: new Date(Date.now() - 10 * 60 * 1000) });
+  await page.goto('/');
+  await page.getByRole('button', { name: /Chemex/ }).click();
+  await expect(page.locator('#timeline small').first()).toContainText('in 0:15');
+  await expect(page.locator('#timeline small').last()).toHaveText('1:20 · no pouring');
+  await page.getByRole('button', { name: 'Start brewing' }).click();
+  await page.clock.fastForward(190000);
+  await expect(page.locator('#instruction')).toContainText('until 4:30 on the brew clock');
+  await expect(page.locator('#timing')).toHaveText('1:20 left in this step');
+  await page.clock.fastForward(21000);
+  await expect(page.locator('#timing')).toHaveText('0:59 left in this step');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect(page.locator('#timing')).toHaveText('0:59 left in this step · timer paused');
+});
+
 test('discard requires confirmation', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Start brewing' }).click();

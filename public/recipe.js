@@ -16,7 +16,7 @@ export function createRecipe(definition, dose = definition?.dose) {
   const render = (items, duration, added) => items.map(item => {
     if (item.type === 'text') return item.text;
     if (item.type === 'cookware') return item.name;
-    if (item.type === 'timer') return `${item.mode === 'until' ? item.seconds : duration} seconds`;
+    if (item.type === 'timer') return formatTime(item.mode === 'until' ? item.seconds : duration);
     const grams = item.name === 'water' && added != null ? added
       : item.name === 'ice' ? Math.round(amount(item) + 1e-9) : Math.round(amount(item) * 10) / 10;
     return `${grams} g ${item.name}`;

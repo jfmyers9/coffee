@@ -13,7 +13,7 @@ test('a fourth file on a new brewer supports timing, persistence, journal, and r
   const id = await page.evaluate(() => JSON.parse(localStorage.getItem('morning-coffee-v1')).session.brewId);
   await expect.poll(async () => (await request.get(`/api/brews/${id}`)).status()).toBe(200);
   await expect(page.locator('#instruction-title')).toHaveText('Fill');
-  await expect(page.locator('#instruction')).toContainText('270 g water over 24 seconds');
+  await expect(page.locator('#instruction')).toContainText('270 g water over 0:24');
   await page.clock.fastForward(24000);
   await expect(page.locator('#instruction-title')).toHaveText('Steep');
   await page.reload();

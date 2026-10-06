@@ -27,7 +27,7 @@ test('adding only a .cook file discovers another recipe and exposes it over HTTP
     ['Fill', 0, 24, 270], ['Steep', 24, 114, 270], ['Press', 114, 144, 270],
   ]);
   assert.match(brew.prep, /18 g coffee/);
-  assert.match(brew.steps[0].instruction, /270 g water over 24 seconds/);
+  assert.match(brew.steps[0].instruction, /270 g water over 0:24/);
   const server = createApp({ pool: {}, recipes: catalog });
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
   server.listen(0, '127.0.0.1');

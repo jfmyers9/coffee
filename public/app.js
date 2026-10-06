@@ -321,8 +321,8 @@ async function main() {
       title.textContent = step.title;
       const detail = document.createElement('small');
       detail.textContent = step.manual ? `At your pace${step.pouring ? ` · add ${step.added} g` : ''}` : step.pouring
-        ? `Add ${step.added} g in ${step.end - step.start}s · ${step.rate.toFixed(1)} g/s`
-        : `${step.end - step.start}s · no pouring`;
+        ? `Add ${step.added} g in ${formatTime(step.end - step.start)} · ${step.rate.toFixed(1)} g/s`
+        : `${formatTime(step.end - step.start)} · no pouring`;
       body.append(title, detail);
       const target = document.createElement('span');
       target.className = 'step-target';

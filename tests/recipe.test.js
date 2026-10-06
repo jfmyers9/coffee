@@ -52,6 +52,16 @@ test('clock formatting', () => {
   assert.equal(formatTime(270), '4:30');
 });
 
+test('recipe instructions format absolute and relative timers as minutes and seconds', () => {
+  const recipe = createRecipe('chemex', 30);
+  assert.match(recipe.steps.at(-1).instruction, /until 4:30 on the brew clock/);
+  for (const step of recipe.steps) {
+    assert.ok(!/\d+ seconds/.test(step.instruction));
+  }
+  const iced = createRecipe('v60', 15, 'japanese-iced');
+  assert.match(iced.steps.at(-1).instruction, /for 1:10/);
+});
+
 test('Japanese iced separates ice from cumulative hot-water targets', () => {
   const recipe = createRecipe('v60', 15, 'japanese-iced');
   assert.equal(recipe.water, 150);
