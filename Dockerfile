@@ -1,4 +1,4 @@
-FROM node:24-alpine
+FROM node:25-alpine
 LABEL org.opencontainers.image.source="https://github.com/jfmyers9/coffee" \
       org.opencontainers.image.description="Mobile-first guided V60 and Chemex coffee brewing"
 WORKDIR /app
