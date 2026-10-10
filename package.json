@@ -14,7 +14,7 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0"
+    "@playwright/test": "1.64.0"
   },
   "dependencies": {
     "@cooklang/cooklang": "0.18.7",
