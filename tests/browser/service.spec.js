@@ -41,7 +41,7 @@ test('bean photo, automatic brew capture, shared cups, daily totals and repeat',
   expect((await (await request.get(`/api/bags/${bagId}`)).json()).remainingGrams).toBe(310);
   await finishEarly(page);
   await page.getByRole('button', { name: 'Rate this cup & log servings' }).click();
-  await page.getByLabel('Rating (optional)', { exact: true }).selectOption('5');
+  await page.getByRole('radio', { name: '5 stars', exact: true }).check();
   await page.getByLabel('Taste (optional)', { exact: true }).selectOption('balanced');
   await page.getByLabel('Brew notes').fill('Sweet and rounded. Keep this grind.');
   await page.getByRole('button', { name: 'Add serving', exact: true }).click();
@@ -69,6 +69,53 @@ test('bean photo, automatic brew capture, shared cups, daily totals and repeat',
   await expect(page.getByLabel('Coffee beans')).toHaveValue('30');
   await expect(page.getByLabel('Water temperature')).toHaveValue('202');
   await expect(page.getByRole('button', { name: 'Start brewing' })).toBeVisible();
+});
+
+test('star ratings support selection, keyboard changes, persistence and clearing on a narrow screen', async ({ page, request }) => {
+  const bag = await (await request.post('/api/bags', { data: bagFields() })).json();
+  const id = randomUUID();
+  expect((await request.post('/api/brews', { data: { id, bagId: bag.id, recipeId: 'v60-hot', dose: 20, temperatureF: 203, grindSetting: 'Encore · 15' } })).status()).toBe(201);
+  expect((await request.patch(`/api/brews/${id}`, { data: { status: 'completed' } })).status()).toBe(200);
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto('/#journal');
+  const card = page.locator('.journal-card').filter({ hasText: bag.roaster });
+  const rating = page.getByRole('group', { name: 'Rating (optional)', exact: true });
+  const save = async expected => {
+    await page.getByRole('button', { name: 'Save result', exact: true }).click();
+    await expect(rating).toHaveCount(0);
+    expect((await (await request.get(`/api/brews/${id}`)).json()).rating).toBe(expected);
+    await card.getByRole('button', { name: 'Edit result', exact: true }).click();
+    await expect(rating).toBeVisible();
+  };
+  await card.getByRole('button', { name: 'Edit result', exact: true }).click();
+  await expect(rating.getByRole('radio')).toHaveCount(5);
+  await expect(rating.locator('input:checked')).toHaveCount(0);
+  await expect(rating).toContainText('Not rated');
+  await expect(rating.getByRole('button', { name: 'Clear rating' })).toBeDisabled();
+  await save(null);
+  for (let score = 1; score <= 5; score++) {
+    const radio = rating.getByRole('radio', { name: `${score} ${score === 1 ? 'star' : 'stars'}`, exact: true });
+    await radio.check();
+    await expect(radio).toBeChecked();
+    await expect(rating.locator('.is-filled')).toHaveCount(score);
+    await expect(rating.locator('.rating-star span')).toHaveText(Array.from({ length: 5 }, (_, index) => index < score ? '★' : '☆'));
+    await save(score);
+    await expect(radio).toBeChecked();
+    await expect(rating.locator('.is-filled')).toHaveCount(score);
+  }
+  const fifth = rating.getByRole('radio', { name: '5 stars', exact: true });
+  await fifth.focus();
+  await fifth.press('ArrowLeft');
+  await expect(rating.getByRole('radio', { name: '4 stars', exact: true })).toBeChecked();
+  await expect(rating.locator('.is-filled')).toHaveCount(4);
+  await save(4);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await rating.getByRole('button', { name: 'Clear rating' }).click();
+  await expect(rating.locator('input:checked')).toHaveCount(0);
+  await expect(rating.locator('.is-filled')).toHaveCount(0);
+  await expect(rating).toContainText('Not rated');
+  await save(null);
+  await expect(rating.locator('input:checked')).toHaveCount(0);
 });
 
 test('lost create response and offline finish survive reload without duplicate brews', async ({ page, request }) => {

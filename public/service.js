@@ -40,6 +40,47 @@ function field(parent, label, name, value = '', type = 'text', choices) {
   parent.append(wrap);
   return input;
 }
+function starRating(parent, value) {
+  const group = node('fieldset', null, 'star-rating');
+  group.append(node('legend', 'Rating (optional)'));
+  const stars = node('div', null, 'rating-stars');
+  const summary = node('span', '', 'muted');
+  const clear = button('Clear rating', () => {
+    stars.querySelectorAll('input').forEach(input => { input.checked = false; });
+    update();
+    stars.querySelector('input').focus();
+  });
+  function update() {
+    const selected = Number(stars.querySelector('input:checked')?.value) || 0;
+    stars.querySelectorAll('label').forEach((label, index) => {
+      const filled = index < selected;
+      label.classList.toggle('is-filled', filled);
+      label.querySelector('span').textContent = filled ? '★' : '☆';
+    });
+    summary.textContent = selected ? `${selected}/5` : 'Not rated';
+    clear.disabled = !selected;
+  }
+  for (let score = 1; score <= 5; score++) {
+    const label = node('label', null, 'rating-star');
+    const input = node('input');
+    input.type = 'radio';
+    input.name = 'rating';
+    input.value = String(score);
+    input.checked = score === value;
+    input.setAttribute('aria-label', `${score} ${score === 1 ? 'star' : 'stars'}`);
+    input.addEventListener('change', update);
+    const icon = node('span');
+    icon.setAttribute('aria-hidden', 'true');
+    label.append(input, icon);
+    stars.append(label);
+  }
+  const row = node('div', null, 'rating-summary');
+  row.append(summary, clear);
+  group.append(stars, row);
+  parent.append(group);
+  update();
+  return group;
+}
 const nullableNumber = input => input.value.trim() === '' ? null : Number(input.value);
 const bagName = bag => [bag?.roaster, bag?.name].filter(Boolean).join(' · ') || 'Unlinked coffee';
 const caffeineWarning = 'Caffeine varies by bean and brew. Decaf is not caffeine-free; unknown is not zero. Enter caffeine only when known—no estimate is inferred from grams. When breastfeeding, seek clinician guidance and count other caffeine sources.';
@@ -381,7 +422,7 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
       heading.tabIndex = -1;
       form.append(heading);
       const grid = node('div', null, 'form-grid');
-      const rating = field(grid, 'Rating (optional)', 'rating', brew.rating, 'text', [['', 'Not rated'], ...[1, 2, 3, 4, 5].map(value => [String(value), `${value}/5`])]);
+      const rating = starRating(grid, brew.rating);
       const taste = field(grid, 'Taste (optional)', 'taste', brew.taste, 'text', [['', 'Not recorded'], ...['balanced', 'sour', 'bitter', 'weak', 'strong'].map(value => [value, value])]);
       const water = field(grid, (brew.ice ?? brew.recipe?.ice ?? 0) > 0 ? 'Actual hot water added (g, excludes ice, optional)' : 'Actual water added (g, optional)', 'waterActual', brew.waterActual, 'number');
       water.max = '2000';
@@ -419,7 +460,7 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
         event.preventDefault();
         action(save, message, async () => {
           await mutate(`/api/brews/${encodeURIComponent(brew.id)}`, { method: 'PATCH', body: {
-            rating: nullableNumber(rating), taste: taste.value || null, waterActual: nullableNumber(water), notes: notes.value.trim(),
+            rating: Number(rating.querySelector('input:checked')?.value) || null, taste: taste.value || null, waterActual: nullableNumber(water), notes: notes.value.trim(),
             servings: servingRows.map(record => ({ person: record.person.value.trim(), volumeMl: nullableNumber(record.volume), milk: record.milk.value, caffeineMg: nullableNumber(record.caffeine) })),
           } });
           resultEditor.replaceChildren();
