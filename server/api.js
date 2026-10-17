@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { createRecipe, resolveRecipe } from '../public/recipe.js';
 import { transaction } from './db.js';
-import { HttpError, invalid, keys, uuid, number, string, choice, timestamp, bagInput, brewPatch, photoInput } from './validation.js';
+import { HttpError, invalid, keys, uuid, number, string, choice, timestamp, bagInput, brewPatch, brewEdit, photoInput } from './validation.js';
 
 const bagSelect = `SELECT b.data, b.photo IS NOT NULL AS has_photo,
   COALESCE((SELECT SUM(dose) FROM brews WHERE bag_id=b.id),0)::float8 AS used FROM bags b`;
@@ -146,9 +146,11 @@ export async function api({ pool, recipes, method, url, body }) {
     const rows = await pool.query(`SELECT data FROM brews${where} ORDER BY started_at DESC,id LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, limit, offset]);
     return { data: { brews: rows.rows.map(row => row.data), total: count.rows[0].total } };
   }
-  const brewRoute = /^\/api\/brews\/([^/]+)$/.exec(path);
+  const brewRoute = /^\/api\/brews\/([^/]+)(?:\/(edit))?$/.exec(path);
   if (brewRoute && ['GET', 'PATCH', 'DELETE'].includes(method)) {
     const id = uuid(brewRoute[1]);
+    const editing = brewRoute[2] === 'edit';
+    if (editing && method !== 'PATCH') throw new HttpError(404, 'Not found');
     if (method === 'GET') {
       const result = await pool.query('SELECT data FROM brews WHERE id=$1', [id]);
       if (!result.rowCount) {
@@ -172,20 +174,37 @@ export async function api({ pool, recipes, method, url, body }) {
         return { id, deleted: true };
       }) };
     }
-    const patch = brewPatch(body);
+    const { patch, expectedRevision } = editing ? brewEdit(body) : { patch: brewPatch(body) };
     return { data: await transaction(pool, async client => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [id]);
       await rejectDeletedBrew(client, id);
       const result = await client.query('SELECT data FROM brews WHERE id=$1 FOR UPDATE', [id]);
       if (!result.rowCount) throw new HttpError(404, 'Brew not found');
       const existing = result.rows[0].data;
+      if (editing) {
+        if (existing.status === 'brewing') throw new HttpError(409, 'Finish or discard this brew before editing it');
+        if (expectedRevision !== (existing.revision ?? 0)) {
+          // A lost-response retry is safe only while its exact result is still current.
+          if (expectedRevision + 1 === existing.revision && Object.entries(patch).every(([key, value]) => isDeepStrictEqual(existing[key], value))) return existing;
+          throw new HttpError(409, 'This brew changed since you opened it. Reload the saved brew before editing again.');
+        }
+      } else if (existing.timingEdited && existing.status !== 'brewing' && (!patch.status || patch.status === existing.status)) {
+        // Old timer outboxes must acknowledge completion without undoing a correction.
+        delete patch.elapsedSeconds;
+        delete patch.finishedAt;
+      }
       if (existing.status !== 'brewing' && patch.status && patch.status !== existing.status) throw new HttpError(409, 'Terminal brew status cannot change');
-      if (patch.finishedAt) {
+      if (patch.finishedAt && !editing) {
         if (existing.status !== 'brewing' && patch.finishedAt !== existing.finishedAt) throw new HttpError(409, 'Terminal finish time cannot change');
         if ((patch.status || existing.status) === 'brewing') invalid('finishedAt requires a terminal status');
         if (Date.parse(patch.finishedAt) < Date.parse(existing.startedAt) || Date.parse(patch.finishedAt) > Date.now() + 5 * 60 * 1000) invalid('finishedAt must follow startedAt and not be in the future');
       }
       const data = { ...existing, ...patch };
+      if (editing) {
+        if (Date.parse(data.finishedAt) < Date.parse(data.startedAt) || Date.parse(data.finishedAt) > Date.now() + 5 * 60 * 1000) invalid('Finish time must follow the start and not be in the future');
+        if ('dose' in patch && (data.dose < (existing.recipe?.min ?? 0.1) || data.dose > (existing.recipe?.max ?? 100))) invalid('Dose is outside the saved recipe’s supported range');
+        if (['startedAt', 'finishedAt', 'elapsedSeconds'].some(key => key in patch && patch[key] !== existing[key])) data.timingEdited = true;
+      }
       if ('bagId' in patch) {
         if (existing.status === 'brewing') throw new HttpError(409, 'Finish or discard this brew before changing its coffee bag');
         if (patch.bagId !== existing.bagId) {
@@ -199,14 +218,15 @@ export async function api({ pool, recipes, method, url, body }) {
         }
       }
       // Delayed progress writes must not move a persisted timer backwards.
-      data.elapsedSeconds = Math.max(existing.elapsedSeconds, data.elapsedSeconds);
+      if (!editing) data.elapsedSeconds = Math.max(existing.elapsedSeconds, data.elapsedSeconds);
       if (existing.status === 'brewing' && data.status !== 'brewing') {
         data.finishedAt = patch.finishedAt || new Date().toISOString();
         if (Date.parse(data.finishedAt) < Date.parse(data.startedAt)) invalid('finishedAt must follow startedAt');
       }
       // Keep inventory/filtering and the displayed snapshot in the same transaction.
       // The original create request stays unchanged so old outbox retries remain safe.
-      await client.query('UPDATE brews SET data=$2,status=$3,bag_id=$4 WHERE id=$1', [id, data, data.status, data.bagId]);
+      if (!isDeepStrictEqual(data, existing)) data.revision = (existing.revision ?? 0) + 1;
+      await client.query('UPDATE brews SET data=$2,status=$3,bag_id=$4,dose=$5,started_at=$6 WHERE id=$1', [id, data, data.status, data.bagId, data.dose, data.startedAt]);
       return data;
     }) };
   }

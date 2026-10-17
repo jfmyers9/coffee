@@ -251,7 +251,7 @@ test('Postgres API integration', { skip: !databaseUrl && 'Set TEST_DATABASE_URL 
     const summary = await ok(summaryPath);
     const defaultBagId = (await ok('/api/bags')).defaultBagId;
     const corrected = await ok(path, 'PATCH', { bagId: correctBag.id });
-    assert.deepEqual(corrected, { ...original, bagId: correctBag.id,
+    assert.deepEqual(corrected, { ...original, revision: original.revision + 1, bagId: correctBag.id,
       bagSnapshot: { name: correctBag.name, roaster: correctBag.roaster, caffeineType: 'decaf' } });
     assert.equal((await ok(`/api/bags/${oldBag.id}`)).remainingGrams, 100);
     assert.equal((await ok(`/api/bags/${correctBag.id}`)).remainingGrams, 230);
@@ -266,7 +266,7 @@ test('Postgres API integration', { skip: !databaseUrl && 'Set TEST_DATABASE_URL 
     assert.deepEqual(await ok('/api/brews', 'POST', input), corrected);
     assert.equal((await request('/api/brews', { method: 'POST', body: { ...input, bagId: correctBag.id } })).status, 409);
     const unlinked = await ok(path, 'PATCH', { bagId: null });
-    assert.deepEqual(unlinked, { ...original, bagId: null, bagSnapshot: null });
+    assert.deepEqual(unlinked, { ...original, revision: corrected.revision + 1, bagId: null, bagSnapshot: null });
     assert.equal((await ok(`/api/bags/${correctBag.id}`)).remainingGrams, 250);
     assert.deepEqual(await ok('/api/brews', 'POST', input), unlinked);
     await ok(path, 'PATCH', { bagId: oldBag.id });
@@ -319,6 +319,83 @@ test('Postgres API integration', { skip: !databaseUrl && 'Set TEST_DATABASE_URL 
     assert.equal((await ok(`/api/brews?bagId=${newBag.id}`)).total, 1);
     await ok(`/api/bags/${newBag.id}`, 'PATCH', { weightGrams: 200 });
     assert.equal((await ok(`/api/bags/${newBag.id}`)).remainingGrams, 180);
+  });
+
+  await t.test('unified edits correct timing, settings, inventory and summary dates without rewriting the recipe', async () => {
+    const oldBag = await createBag({ weightGrams: 100 });
+    const actualBag = await createBag({ weightGrams: 200, caffeineType: 'decaf', archived: true });
+    const input = brewInput({ bagId: oldBag.id, startedAt: '2018-01-02T08:00:00.000Z' });
+    await ok('/api/brews', 'POST', input, 201);
+    const path = `/api/brews/${input.id}`;
+    const completion = { status: 'completed', finishedAt: '2018-01-02T08:04:00.000Z', elapsedSeconds: 240 };
+    const original = await ok(path, 'PATCH', completion);
+    const edit = { expectedRevision: original.revision, bagId: actualBag.id, dose: 21.5, startedAt: '2018-01-01T08:00:00.000Z', finishedAt: '2018-01-01T08:02:00.000Z', elapsedSeconds: 90,
+      temperatureF: 196, grindSetting: 'Custom 17', rating: 5, taste: 'balanced', notes: 'Corrected', waterActual: 300,
+      servings: [{ person: 'Edited cup', volumeMl: 200, milk: 'oat', caffeineMg: null }] };
+    const saved = await ok(`${path}/edit`, 'PATCH', edit);
+    const { expectedRevision, ...changes } = edit;
+    assert.deepEqual(saved, { ...original, ...changes, revision: original.revision + 1, timingEdited: true,
+      bagSnapshot: { name: actualBag.name, roaster: actualBag.roaster, caffeineType: 'decaf' } });
+    assert.deepEqual(saved.recipe, original.recipe);
+    assert.equal(saved.water, original.water);
+    assert.equal((await ok(`/api/bags/${oldBag.id}`)).remainingGrams, 100);
+    assert.equal((await ok(`/api/bags/${actualBag.id}`)).remainingGrams, 178.5);
+    const day = date => `/api/summary?from=2018-01-0${date}T00:00:00.000Z&to=2018-01-0${date + 1}T00:00:00.000Z`;
+    assert.equal((await ok(day(1))).totalDose, 21.5);
+    assert.equal((await ok(day(1))).servings[0].unknownCaffeineCount, 1);
+    assert.equal((await ok(day(2))).brewsCompleted, 0);
+    const row = (await pool.query('SELECT bag_id,dose,started_at FROM brews WHERE id=$1', [input.id])).rows[0];
+    assert.equal(row.bag_id, actualBag.id);
+    assert.equal(Number(row.dose), 21.5);
+    assert.equal(row.started_at.toISOString(), saved.startedAt);
+    assert.deepEqual((await ok(`/api/brews?bagId=${actualBag.id}`)).brews, [saved]);
+    assert.deepEqual((await ok('/api/export')).brews.find(brew => brew.id === input.id), saved);
+    assert.deepEqual(await ok(`${path}/edit`, 'PATCH', edit), saved); // Lost response.
+    assert.deepEqual(await ok(path, 'PATCH', { ...completion, elapsedSeconds: 420 }), saved); // Old timer.
+    assert.deepEqual(await ok('/api/brews', 'POST', input), saved); // Old create.
+    await ok(path, 'DELETE', {});
+    assert.equal((await ok(`/api/bags/${actualBag.id}`)).remainingGrams, 200);
+    assert.equal((await request(`${path}/edit`, { method: 'PATCH', body: edit })).status, 410);
+  });
+
+  await t.test('unified edits reject invalid, active and immutable changes without partial writes', async () => {
+    const bag = await createBag({ weightGrams: 100 });
+    const brew = await createBrew({ bagId: bag.id });
+    const path = `/api/brews/${brew.id}`;
+    assert.equal((await request(`${path}/edit`, { method: 'PATCH', body: { expectedRevision: 0, notes: 'No' } })).status, 409);
+    const saved = await ok(path, 'PATCH', { status: 'discarded' });
+    const edit = patch => request(`${path}/edit`, { method: 'PATCH', body: { expectedRevision: saved.revision, ...patch } });
+    for (const patch of [{ dose: 0 }, { dose: 20.01 }, { dose: 100 }, { dose: '21' }, { temperatureF: 213 }, { grindSetting: '' },
+      { expectedRevision: -1 }, { expectedRevision: 1.5 }, { status: 'completed' }, { recipe: {} }, { brewer: 'chemex' },
+      { startedAt: 'invalid' }, { finishedAt: '2000-01-01T00:00:00.000Z' }, { elapsedSeconds: -1 }, { elapsedSeconds: 86401 },
+      { startedAt: '2999-01-01T00:00:00.000Z', finishedAt: '2999-01-01T01:00:00.000Z' }, { bagId: null, dose: 20.01, notes: 'No partial save' }]) {
+      assert.equal((await edit(patch)).status, 400, JSON.stringify(patch));
+    }
+    assert.equal((await request(`${path}/edit`, { method: 'PATCH', body: { notes: 'Missing revision' } })).status, 400);
+    assert.equal((await edit({ bagId: randomUUID() })).status, 404);
+    assert.deepEqual(await ok(path), saved);
+    assert.equal((await ok(`/api/bags/${bag.id}`)).remainingGrams, 80);
+    const corrected = await ok(`${path}/edit`, 'PATCH', { expectedRevision: saved.revision, elapsedSeconds: 60, dose: 19 });
+    assert.equal(corrected.status, 'discarded');
+    assert.equal(corrected.dose, 19);
+    assert.equal((await ok(`/api/bags/${bag.id}`)).remainingGrams, 81);
+    assert.equal((await request(`${path}/edit`)).status, 404);
+  });
+
+  await t.test('unified edits detect stale editors and acknowledge identical retries without extra revisions', async () => {
+    const brew = await createBrew();
+    const path = `/api/brews/${brew.id}`;
+    const original = await ok(path, 'PATCH', { status: 'completed' });
+    const edits = [{ expectedRevision: original.revision, notes: 'First' }, { expectedRevision: original.revision, notes: 'Second' }];
+    const results = await Promise.all(edits.map(body => request(`${path}/edit`, { method: 'PATCH', body })));
+    assert.deepEqual(results.map(result => result.status).sort(), [200, 409]);
+    const winner = results.findIndex(result => result.status === 200);
+    const saved = results[winner].data;
+    assert.deepEqual(await ok(`${path}/edit`, 'PATCH', edits[winner]), saved);
+    assert.deepEqual(await ok(`${path}/edit`, 'PATCH', { expectedRevision: saved.revision, notes: saved.notes }), saved);
+    await ok(path, 'PATCH', { rating: 5 }); // Also invalidate editors opened before a legacy result edit.
+    assert.equal((await request(`${path}/edit`, { method: 'PATCH', body: edits[winner] })).status, 409);
+    assert.equal((await ok(path)).rating, 5);
   });
 
   await t.test('terminal brews allow result edits but cannot restart or change recipe settings', async () => {

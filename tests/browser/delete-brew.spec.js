@@ -59,7 +59,7 @@ test('deleting a completed brew clears its open editor, finished timer, and dail
   await page.getByRole('link', { name: 'Journal', exact: true }).click();
   await expect(page.locator('#daily-summary')).toContainText(person);
   const card = cardFor(page, bag);
-  await card.getByRole('button', { name: 'Edit result' }).click();
+  await card.getByRole('button', { name: 'Edit brew' }).click();
   await expect(page.getByLabel('Brew notes')).toBeVisible();
   page.once('dialog', dialog => dialog.accept());
   await card.getByRole('button', { name: 'Delete brew' }).click();

@@ -51,7 +51,7 @@ test('bean photo, automatic brew capture, shared cups, daily totals and repeat',
   await page.getByLabel('Person', { exact: true }).nth(1).fill('Partner');
   await page.getByLabel('Cup volume (ml)', { exact: true }).nth(1).fill('150');
   await page.getByLabel('Milk', { exact: true }).nth(1).selectOption('oat');
-  await page.getByRole('button', { name: 'Save result', exact: true }).click();
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   const resultCard = page.locator('.journal-card').filter({ hasText: bag.roaster });
   await expect(resultCard).toContainText('5/5');
   await expect(resultCard).toContainText('Partner: 150 ml · milk: oat · caffeine: unknown');
@@ -81,13 +81,13 @@ test('star ratings support selection, keyboard changes, persistence and clearing
   const card = page.locator('.journal-card').filter({ hasText: bag.roaster });
   const rating = page.getByRole('group', { name: 'Rating (optional)', exact: true });
   const save = async expected => {
-    await page.getByRole('button', { name: 'Save result', exact: true }).click();
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect(rating).toHaveCount(0);
     expect((await (await request.get(`/api/brews/${id}`)).json()).rating).toBe(expected);
-    await card.getByRole('button', { name: 'Edit result', exact: true }).click();
+    await card.getByRole('button', { name: 'Edit brew', exact: true }).click();
     await expect(rating).toBeVisible();
   };
-  await card.getByRole('button', { name: 'Edit result', exact: true }).click();
+  await card.getByRole('button', { name: 'Edit brew', exact: true }).click();
   await expect(rating.getByRole('radio')).toHaveCount(5);
   await expect(rating.locator('input:checked')).toHaveCount(0);
   await expect(rating).toContainText('Not rated');

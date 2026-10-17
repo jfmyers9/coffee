@@ -82,6 +82,11 @@ function starRating(parent, value) {
   return group;
 }
 const nullableNumber = input => input.value.trim() === '' ? null : Number(input.value);
+const durationText = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+const localDateTime = iso => {
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+};
 const bagName = bag => [bag?.roaster, bag?.name].filter(Boolean).join(' · ') || 'Unlinked coffee';
 const caffeineWarning = 'Caffeine varies by bean and brew. Decaf is not caffeine-free; unknown is not zero. Enter caffeine only when known—no estimate is inferred from grams. When breastfeeding, seek clinician guidance and count other caffeine sources.';
 
@@ -129,8 +134,22 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
   const beansMessage = notice();
   const journalMessage = notice();
   const beanEditor = node('div');
-  const resultEditor = node('div');
-  let resultBrewId = null;
+  const brewEditor = node('div');
+  let editorBrewId = null;
+  let editorRequest = 0;
+  let editorState = null;
+  function closeEditor(force = false) {
+    if (!force && editorState?.saving) { journalMessage.textContent = 'Saving this brew. Please wait.'; return false; }
+    if (!force && editorState?.dirty() && !window.confirm('Discard unsaved changes to this brew?')) return false;
+    ++editorRequest;
+    editorState = null;
+    editorBrewId = null;
+    brewEditor.replaceChildren();
+    return true;
+  }
+  window.addEventListener('beforeunload', event => {
+    if (editorState && (editorState.saving || editorState.dirty())) { event.preventDefault(); event.returnValue = ''; }
+  });
   journalMessage.tabIndex = -1;
   const bagList = node('div', null, 'service-grid');
   const journalList = node('div', null, 'service-grid');
@@ -311,7 +330,7 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
   filters.append(button('Refresh journal', () => refreshJournal().catch(() => {})), exportLink);
   const stats = node('p', '', 'muted');
   const more = button('Load more', () => refreshJournal(true).catch(() => {}));
-  journalRoot.append(filters, journalMessage, resultEditor, node('p', caffeineWarning, 'notice'), stats, journalList, more);
+  journalRoot.append(filters, journalMessage, brewEditor, node('p', caffeineWarning, 'notice'), stats, journalList, more);
   for (const filter of [filterBag, filterBrewer, filterStatus]) filter.addEventListener('change', () => refreshJournal().catch(() => {}));
   function updateJournalBagFilter() {
     const current = filterBag.value;
@@ -360,8 +379,8 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
       for (const serving of brew.servings || []) card.append(node('p', `${serving.person}: ${serving.volumeMl ?? 'unknown'} ml · milk: ${serving.milk || 'none'} · caffeine: ${serving.caffeineMg == null ? 'unknown' : `${serving.caffeineMg} mg (entered)`}`, 'muted'));
       const row = node('div', null, 'button-row');
       const repeat = button('Brew again', () => action(repeat, journalMessage, () => onBrewAgain(brew)));
+      if (['completed', 'discarded'].includes(brew.status)) row.append(button('Edit brew', () => editBrew(brew.id).catch(() => {}), 'primary'));
       row.append(repeat);
-      if (brew.status === 'completed') row.append(button('Edit result', () => showResults(brew.id).catch(() => {})));
       if (brew.status === 'brewing') {
         const close = button('Close unfinished brew', () => {
           if (getActiveBrewId() === brew.id) {
@@ -377,7 +396,6 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
         row.append(close);
       }
       if (['completed', 'discarded'].includes(brew.status)) {
-        row.append(button('Change coffee bag', () => showBagCorrection(brew.id).catch(() => {})));
         const remove = button('Delete brew', () => {
           if (getActiveBrewId() === brew.id) {
             journalMessage.textContent = 'This timer is active on this device. Finish or discard it on the Brew tab.';
@@ -390,10 +408,7 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
             ++journalRequest; // Ignore list responses started before the deletion.
             brews = brews.filter(item => item.id !== brew.id);
             total = Math.max(0, total - 1);
-            if (resultBrewId === brew.id) {
-              resultBrewId = null;
-              resultEditor.replaceChildren();
-            }
+            if (editorBrewId === brew.id) closeEditor(true);
             renderJournal();
             await onBrewDeleted(brew.id);
             const results = await Promise.allSettled([refreshJournal(), refreshBags()]);
@@ -410,72 +425,73 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
     }
   }
 
-  async function showBagCorrection(brewId) {
+  async function editBrew(brewId) {
     if (getActiveBrewId() === brewId) {
       journalMessage.textContent = 'This timer is active on this device. Finish or discard it on the Brew tab.';
       return;
     }
-    resultBrewId = brewId;
+    if (!closeEditor()) return;
+    const request = ++editorRequest;
+    editorBrewId = brewId;
     try {
+      onNavigate('journal');
+      journalMessage.textContent = 'Loading brew…';
       const [brew, library] = await Promise.all([api(`/api/brews/${encodeURIComponent(brewId)}`), api('/api/bags')]);
-      if (resultBrewId !== brewId) return;
-      if (!['completed', 'discarded'].includes(brew.status)) throw new Error('Finish or discard this brew before changing its coffee bag.');
-      resultEditor.replaceChildren();
-      const form = node('form', null, 'service-form card');
-      const heading = node('h3', 'Correct coffee bag');
+      if (request !== editorRequest) return;
+      if (!['completed', 'discarded'].includes(brew.status)) throw new Error('Finish or discard this brew before editing it.');
+      journalMessage.textContent = '';
+      const form = node('form', null, 'service-form card brew-editor');
+      const heading = node('h3', 'Edit brew');
       heading.tabIndex = -1;
-      const grid = node('div', null, 'form-grid');
-      const bag = field(grid, 'Coffee used', 'bagId', brew.bagId, 'text', [
+      form.append(heading, node('p', `${bagName(brew.bagSnapshot)} · ${new Date(brew.startedAt).toLocaleString()} · ${brew.status}`, 'muted'));
+      function section(title) {
+        const group = node('fieldset', null, 'brew-edit-section');
+        group.append(node('legend', title));
+        const grid = node('div', null, 'form-grid');
+        group.append(grid);
+        form.append(group);
+        return grid;
+      }
+      const coffee = section('Coffee');
+      const bag = field(coffee, 'Coffee used', 'bagId', brew.bagId, 'text', [
         ['', 'No bag / unlinked coffee'],
         ...library.bags.map(item => [item.id, `${bagName(item)}${item.archived ? ' (archived)' : ''}`]),
       ]);
-      const message = notice();
-      const row = node('div', null, 'button-row');
-      const save = node('button', 'Save bag change', 'primary');
-      save.type = 'submit';
-      row.append(save, button('Cancel', () => { resultBrewId = null; resultEditor.replaceChildren(); }));
-      form.append(heading, node('p', `Currently recorded: ${bagName(brew.bagSnapshot)}.`, 'muted'), grid,
-        node('p', `Changing the bag moves this brew’s ${brew.dose} g usage from the old bag to the selected bag and updates its saved coffee name and caffeine type. No bag leaves the dose unassigned. Ratings, notes, servings, and entered caffeine amounts stay unchanged.`, 'notice'), message, row);
-      form.addEventListener('submit', event => {
-        event.preventDefault();
-        action(save, message, async () => {
-          if (getActiveBrewId() === brewId) throw new Error('Finish or discard the active timer before changing its coffee bag.');
-          await mutate(`/api/brews/${encodeURIComponent(brewId)}`, { method: 'PATCH', body: { bagId: bag.value || null } });
-          resultBrewId = null;
-          resultEditor.replaceChildren();
-          const results = await Promise.allSettled([refreshJournal(), refreshBags()]);
-          journalMessage.textContent = results.some(result => result.status === 'rejected')
-            ? 'Coffee bag corrected, but some views could not refresh. Reload to see updated history and inventory.'
-            : 'Coffee bag corrected. History and bag usage are updated.';
-          journalMessage.focus();
-        });
-      });
-      resultEditor.append(form);
-      heading.focus();
-      form.scrollIntoView({ block: 'nearest' });
-    } catch (error) { journalMessage.textContent = `Could not open bag correction: ${error.message}`; throw error; }
-  }
-
-  async function showResults(brewId) {
-    resultBrewId = brewId;
-    try {
-      onNavigate('journal');
-      const brew = await api(`/api/brews/${encodeURIComponent(brewId)}`);
-      if (resultBrewId !== brewId) return;
-      if (brew.status !== 'completed') throw new Error('Only completed brews can have a result edited.');
-      resultEditor.replaceChildren();
-      const form = node('form', null, 'service-form card');
-      const heading = node('h3', 'How was your coffee?');
-      heading.tabIndex = -1;
-      form.append(heading);
-      const grid = node('div', null, 'form-grid');
-      const rating = starRating(grid, brew.rating);
-      const taste = field(grid, 'Taste (optional)', 'taste', brew.taste, 'text', [['', 'Not recorded'], ...['balanced', 'sour', 'bitter', 'weak', 'strong'].map(value => [value, value])]);
-      const water = field(grid, (brew.ice ?? brew.recipe?.ice ?? 0) > 0 ? 'Actual hot water added (g, excludes ice, optional)' : 'Actual water added (g, optional)', 'waterActual', brew.waterActual, 'number');
+      const dose = field(coffee, 'Coffee dose (g)', 'dose', brew.dose, 'number');
+      dose.min = String(brew.recipe?.min ?? 0.1);
+      dose.max = String(brew.recipe?.max ?? 100);
+      dose.step = '0.1';
+      dose.required = true;
+      coffee.append(node('p', 'Bag and dose corrections update inventory. Archived bags are available; no bag leaves usage unassigned. The default bag and entered caffeine amounts do not change.', 'hint wide'));
+      const details = section('Brew details');
+      details.append(node('p', `Recipe guide: ${brew.recipe?.name ?? brew.brewer} · ${brew.recipe?.label ?? 'Recipe'}. Corrections below do not rewrite its original water targets or step timings.`, 'hint wide'));
+      const started = field(details, 'Started at (local time)', 'startedAt', localDateTime(brew.startedAt), 'datetime-local');
+      const finished = field(details, 'Finished at (local time)', 'finishedAt', localDateTime(brew.finishedAt), 'datetime-local');
+      for (const input of [started, finished]) { input.required = true; input.step = '1'; }
+      const duration = field(details, 'Brew duration (minutes:seconds)', 'duration', durationText(brew.elapsedSeconds));
+      duration.required = true;
+      duration.pattern = '[0-9]{1,4}:[0-5][0-9]';
+      duration.placeholder = '3:30';
+      duration.title = 'Minutes and two-digit seconds, for example 3:30 (up to 24 hours)';
+      details.append(node('p', 'Times use your device’s time zone. Duration excludes pauses; correcting it does not automatically change the start or finish time.', 'hint wide'));
+      const temperature = field(details, 'Recorded temperature (°F)', 'temperatureF', brew.temperatureF, 'number');
+      temperature.min = '140';
+      temperature.max = '212';
+      temperature.required = true;
+      const grind = field(details, 'Recorded grind setting', 'grindSetting', brew.grindSetting);
+      grind.required = true;
+      grind.maxLength = 80;
+      const water = field(details, (brew.ice ?? brew.recipe?.ice ?? 0) > 0 ? 'Actual hot water added (g, excludes ice, optional)' : 'Actual water added (g, optional)', 'waterActual', brew.waterActual, 'number');
       water.max = '2000';
-      const notes = field(grid, 'Brew notes', 'notes', brew.notes, 'textarea');
-      notes.maxLength = 5000;
-      const servings = node('div', null, 'servings');
+      const results = section('Results');
+      const rating = starRating(results, brew.rating);
+      const taste = field(results, 'Taste (optional)', 'taste', brew.taste, 'text', [['', 'Not recorded'], ...['balanced', 'sour', 'bitter', 'weak', 'strong'].map(value => [value, value])]);
+      const notes = field(results, 'Brew notes', 'notes', brew.notes, 'textarea');
+      notes.maxLength = 10000;
+      notes.parentElement.classList.add('wide');
+      const cups = section('Servings');
+      cups.append(node('p', 'Add your cup and optionally a partner’s cup. Leave unknown caffeine blank.', 'muted wide'));
+      const servings = node('div', null, 'servings wide');
       const servingRows = [];
       function addServing(value = {}) {
         if (servingRows.length >= 10) return;
@@ -497,29 +513,72 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
         servings.append(row);
       }
       for (const serving of brew.servings || []) addServing(serving);
+      cups.append(servings, button('Add serving', () => addServing()), node('p', caffeineWarning, 'notice wide'));
       const message = notice();
       const row = node('div', null, 'button-row');
-      const save = node('button', 'Save result', 'primary');
+      const save = node('button', 'Save changes', 'primary');
       save.type = 'submit';
-      row.append(save, button('Cancel', () => { resultBrewId = null; resultEditor.replaceChildren(); }));
-      form.append(grid, node('h3', 'Household cups'), node('p', 'Add your cup and optionally a partner’s cup. Leave unknown caffeine blank.', 'muted'), servings, button('Add serving', () => addServing()), node('p', caffeineWarning, 'notice'), message, row);
-      form.addEventListener('submit', event => {
+      const reload = button('Reload saved brew', () => editBrew(brewId).catch(() => {}));
+      reload.hidden = true;
+      row.append(save, button('Cancel', () => {
+        if (closeEditor()) { journalMessage.textContent = 'Editor closed.'; journalMessage.focus(); }
+      }), reload);
+      form.append(message, row);
+      function values() {
+        const match = /^(\d{1,4}):([0-5]\d)$/.exec(duration.value);
+        const seconds = match ? Number(match[1]) * 60 + Number(match[2]) : NaN;
+        if (!Number.isFinite(seconds) || seconds > 86400) throw new Error('Enter duration as minutes:seconds, up to 1440:00.');
+        return {
+          bagId: bag.value || null, dose: nullableNumber(dose),
+          startedAt: new Date(started.value).toISOString(), finishedAt: new Date(finished.value).toISOString(),
+          elapsedSeconds: seconds, temperatureF: nullableNumber(temperature), grindSetting: grind.value.trim(),
+          waterActual: nullableNumber(water), rating: Number(rating.querySelector('input:checked')?.value) || null,
+          taste: taste.value || null, notes: notes.value.trim(),
+          servings: servingRows.map(record => ({ person: record.person.value.trim(), volumeMl: nullableNumber(record.volume), milk: record.milk.value, caffeineMg: nullableNumber(record.caffeine) })),
+        };
+      }
+      // Compare normalized initial values so untouched timestamps keep their milliseconds.
+      const initial = values();
+      const snapshot = () => JSON.stringify([...new FormData(form)]);
+      const initialSnapshot = snapshot();
+      const state = { saving: false, dirty: () => snapshot() !== initialSnapshot };
+      editorState = state;
+      form.addEventListener('submit', async event => {
         event.preventDefault();
-        action(save, message, async () => {
-          await mutate(`/api/brews/${encodeURIComponent(brew.id)}`, { method: 'PATCH', body: {
-            rating: Number(rating.querySelector('input:checked')?.value) || null, taste: taste.value || null, waterActual: nullableNumber(water), notes: notes.value.trim(),
-            servings: servingRows.map(record => ({ person: record.person.value.trim(), volumeMl: nullableNumber(record.volume), milk: record.milk.value, caffeineMg: nullableNumber(record.caffeine) })),
-          } });
-          resultEditor.replaceChildren();
-          try { await refreshJournal(); }
-          catch (error) { journalMessage.textContent = `Result saved, but journal refresh failed: ${error.message}`; return; }
-          journalMessage.textContent = 'Brew result saved.';
-        });
+        if (state.saving) return;
+        message.textContent = '';
+        try {
+          if (getActiveBrewId() === brewId) throw new Error('Finish or discard the active timer before editing this brew.');
+          const current = values();
+          const patch = Object.fromEntries(Object.entries(current).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(initial[key])));
+          if (!Object.keys(patch).length) { closeEditor(true); return; }
+          state.saving = true;
+          const controls = [...form.elements].map(input => [input, input.disabled]);
+          controls.forEach(([input]) => { input.disabled = true; });
+          try {
+            await mutate(`/api/brews/${encodeURIComponent(brewId)}/edit`, { method: 'PATCH', body: { expectedRevision: brew.revision ?? 0, ...patch } });
+          } finally {
+            controls.forEach(([input, disabled]) => { input.disabled = disabled; });
+            state.saving = false;
+          }
+          if (editorState === state) closeEditor(true);
+          const refreshed = await Promise.allSettled([refreshJournal(), refreshBags()]);
+          journalMessage.textContent = refreshed.some(result => result.status === 'rejected')
+            ? 'Brew saved, but some views could not refresh. Reload to see updated history and inventory.'
+            : 'Brew changes saved. History, inventory, and totals are updated.';
+          journalMessage.focus();
+        } catch (error) {
+          message.textContent = error.message;
+          reload.hidden = error.status !== 409;
+        }
       });
-      resultEditor.append(form);
+      brewEditor.append(form);
       heading.focus();
       form.scrollIntoView({ block: 'nearest' });
-    } catch (error) { journalMessage.textContent = `Could not open result: ${error.message}`; throw error; }
+    } catch (error) {
+      if (request === editorRequest) journalMessage.textContent = `Could not open brew: ${error.message}`;
+      throw error;
+    }
   }
   async function refreshAll() {
     const results = await Promise.allSettled([refreshBags(), refreshJournal()]);
@@ -528,5 +587,5 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
   }
   // Render useful retryable UI even when the service is initially unavailable.
   await refreshAll().catch(() => {});
-  return { refreshBags, refreshJournal, showResults, get selectedBag() { return brewSelect.value || null; }, setSelectedBag, getBag: (id = selectedBagId) => bags.find(bag => bag.id === id) || null, refreshAll };
+  return { refreshBags, refreshJournal, editBrew, get selectedBag() { return brewSelect.value || null; }, setSelectedBag, getBag: (id = selectedBagId) => bags.find(bag => bag.id === id) || null, refreshAll };
 }

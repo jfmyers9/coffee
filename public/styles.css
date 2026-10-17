@@ -143,6 +143,11 @@ footer span { font: 10px sans-serif; }
 .service-form { margin-bottom: 24px; }
 .service-form > h3 { font: 28px Georgia, serif; margin-bottom: 24px; }
 .service-form > .form-grid { margin-bottom: 24px; }
+.brew-editor { overflow-wrap: anywhere; }
+.brew-edit-section { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 24px; }
+.brew-edit-section > legend { padding-right: 12px; font-size: 16px; font-weight: 600; }
+.brew-edit-section .hint, .brew-edit-section .notice { margin-bottom: 0; }
+.brew-edit-section input[type="datetime-local"] { display: block; max-width: 100%; overflow: hidden; }
 .servings { display: grid; gap: 18px; margin: 20px 0; }
 .serving-row { padding: 20px; border: 1px solid var(--line); border-radius: 14px; }
 .serving-row legend { padding-inline: 8px; font-size: 12px; color: var(--muted); }

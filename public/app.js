@@ -509,7 +509,7 @@ async function main() {
     try {
       await terminalSave;
       if (await flushBrews()) {
-        if (service && targetId) { navigate('journal'); await service.showResults(targetId); }
+        if (service && targetId) { navigate('journal'); await service.editBrew(targetId); }
       } else message('This brew is queued on this device. Reconnect and retry sync before adding results.');
     } catch (error) { message(`Could not open results: ${error.message}`); }
     finally { $('rate-brew').disabled = false; }

@@ -72,6 +72,21 @@ export function brewPatch(body) {
   }
   return result;
 }
+export function brewEdit(body) {
+  keys(body, ['expectedRevision', 'dose', 'temperatureF', 'grindSetting', 'startedAt', 'bagId', 'finishedAt', 'elapsedSeconds', 'rating', 'taste', 'notes', 'waterActual', 'servings']);
+  const { expectedRevision, dose, temperatureF, grindSetting, startedAt, ...results } = body;
+  number(expectedRevision, 'expectedRevision', 0, Number.MAX_SAFE_INTEGER - 1);
+  if (!Number.isInteger(expectedRevision)) invalid('Invalid expectedRevision');
+  const patch = brewPatch(results);
+  if ('dose' in body) {
+    patch.dose = number(dose, 'dose', 0.1, 100);
+    if (Math.abs(dose * 10 - Math.round(dose * 10)) > 1e-8) invalid('Use 0.1 g dose increments');
+  }
+  if ('temperatureF' in body) patch.temperatureF = number(temperatureF, 'temperatureF', 140, 212);
+  if ('grindSetting' in body) patch.grindSetting = string(grindSetting, 'grindSetting', 80, true);
+  if ('startedAt' in body) patch.startedAt = timestamp(startedAt);
+  return { patch, expectedRevision };
+}
 export function photoInput(body) {
   keys(body, ['dataUrl']);
   if (typeof body.dataUrl !== 'string') invalid('Invalid photo');
