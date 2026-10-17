@@ -118,34 +118,67 @@ test('star ratings support selection, keyboard changes, persistence and clearing
   await expect(rating.locator('input:checked')).toHaveCount(0);
 });
 
-test('lost create response and offline finish survive reload without duplicate brews', async ({ page, request }) => {
-  const bag = await (await request.post('/api/bags', { data: bagFields() })).json();
-  let first = true;
-  await page.route('**/api/brews**', async route => {
-    if (route.request().method() === 'POST' && first) {
-      first = false;
-      await route.fetch(); // Server committed, but the client never sees the response.
-      await route.abort();
-    } else if (['POST', 'PATCH'].includes(route.request().method())) await route.abort();
-    else await route.continue();
+for (const recovery of ['manual retry', 'automatic startup sync', 'automatic periodic retry']) {
+  test(`lost create response and offline finish survive reload without duplicate brews (${recovery})`, async ({ page, request }) => {
+    // Prevent the periodic retry from racing the explicitly controlled recovery.
+    await page.clock.install({ time: Date.now() - 1000 });
+    await page.clock.pauseAt(Date.now());
+    const bag = await (await request.post('/api/bags', { data: bagFields() })).json();
+    let first = true;
+    await page.route('**/api/brews**', async route => {
+      if (route.request().method() === 'POST' && first) {
+        first = false;
+        await route.fetch(); // Server committed, but the client never sees the response.
+        await route.abort();
+      } else if (['POST', 'PATCH'].includes(route.request().method())) await route.abort();
+      else await route.continue();
+    });
+    await page.goto('/');
+    await expect(page.getByLabel('On the counter')).toHaveValue(bag.id);
+    await page.getByRole('button', { name: 'Start brewing' }).click();
+    const id = await waitForRecord(page, request);
+    await expect(page.locator('#retry-sync')).toBeVisible();
+    await finishEarly(page);
+    const pending = () => page.evaluate(() => JSON.parse(localStorage.getItem('morning-coffee-outbox-v1')).length);
+    await expect.poll(pending).toBe(2);
+
+    // The restored timer renders before service initialization and its startup
+    // flush finish. Hold initialization to exercise both network recovery orders.
+    let releaseService;
+    const serviceReady = new Promise(resolve => { releaseService = resolve; });
+    let serviceRequested;
+    const requested = new Promise(resolve => { serviceRequested = resolve; });
+    await page.route('**/api/bags', async route => {
+      serviceRequested();
+      await serviceReady;
+      await route.continue();
+    });
+    try {
+      await page.reload();
+      await requested;
+      await expect(page.locator('#instruction-title')).toHaveText('Enjoy your coffee.');
+      await expect.poll(pending).toBe(2);
+      if (recovery !== 'automatic startup sync') {
+        releaseService();
+        // Visibility alone is insufficient: the button briefly appears before
+        // the startup flush. Wait for that flush to fail while still offline.
+        await expect(page.locator('#sync-text')).toContainText('2 brew updates waiting to sync ·');
+        await expect(page.locator('#retry-sync')).toBeVisible();
+      }
+      await page.unroute('**/api/brews**');
+      if (recovery === 'manual retry') await page.getByRole('button', { name: 'Retry sync' }).click();
+      else if (recovery === 'automatic startup sync') releaseService();
+      else await page.clock.fastForward(15000);
+    } finally { releaseService(); }
+
+    await expect.poll(async () => (await (await request.get(`/api/brews/${id}`)).json()).status).toBe('completed');
+    await expect.poll(pending).toBe(0);
+    await expect(page.locator('#retry-sync')).toBeHidden();
+    const entries = await (await request.get(`/api/brews?bagId=${bag.id}`)).json();
+    expect(entries.total).toBe(1);
+    expect((await (await request.get(`/api/bags/${bag.id}`)).json()).remainingGrams).toBe(320);
   });
-  await page.goto('/');
-  await expect(page.getByLabel('On the counter')).toHaveValue(bag.id);
-  await page.getByRole('button', { name: 'Start brewing' }).click();
-  const id = await waitForRecord(page, request);
-  await expect(page.locator('#retry-sync')).toBeVisible();
-  await finishEarly(page);
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('morning-coffee-outbox-v1')).length)).toBe(2);
-  await page.reload();
-  await expect(page.locator('#instruction-title')).toHaveText('Enjoy your coffee.');
-  await page.unroute('**/api/brews**');
-  await page.getByRole('button', { name: 'Retry sync' }).click();
-  await expect.poll(async () => (await (await request.get(`/api/brews/${id}`)).json()).status).toBe('completed');
-  await expect(page.locator('#retry-sync')).toBeHidden();
-  const entries = await (await request.get(`/api/brews?bagId=${bag.id}`)).json();
-  expect(entries.total).toBe(1);
-  expect((await (await request.get(`/api/bags/${bag.id}`)).json()).remainingGrams).toBe(320);
-});
+}
 
 test('active brew cannot be closed from journal; remote conflict is recoverable', async ({ page, request }) => {
   await page.goto('/');

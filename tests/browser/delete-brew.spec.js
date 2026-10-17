@@ -120,6 +120,8 @@ test('active timers cannot be deleted even if another device closes the server r
 });
 
 test('offline retries drop deleted brews without resurrecting them or losing other queued brews', async ({ page, request }) => {
+  await page.clock.install({ time: Date.now() - 1000 });
+  await page.clock.pauseAt(Date.now());
   const bag = await createBag(request);
   let first = true;
   await page.route('**/api/brews**', async route => {
@@ -142,6 +144,8 @@ test('offline retries drop deleted brews without resurrecting them or losing oth
   await request.patch(`/api/brews/${id}`, { data: { status: 'discarded' } });
   expect((await request.delete(`/api/brews/${id}`, { data: {} })).status()).toBe(200);
   await page.reload();
+  // Wait for the startup flush to fail, not the transient pre-flush button.
+  await expect(page.locator('#sync-text')).toContainText('3 brew updates waiting to sync ·');
   await expect(page.getByRole('button', { name: 'Retry sync' })).toBeVisible();
   await page.unroute('**/api/brews**');
   await page.getByRole('button', { name: 'Retry sync' }).click();
