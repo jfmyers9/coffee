@@ -377,6 +377,7 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
         row.append(close);
       }
       if (['completed', 'discarded'].includes(brew.status)) {
+        row.append(button('Change coffee bag', () => showBagCorrection(brew.id).catch(() => {})));
         const remove = button('Delete brew', () => {
           if (getActiveBrewId() === brew.id) {
             journalMessage.textContent = 'This timer is active on this device. Finish or discard it on the Brew tab.';
@@ -407,6 +408,52 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
       card.append(row);
       journalList.append(card);
     }
+  }
+
+  async function showBagCorrection(brewId) {
+    if (getActiveBrewId() === brewId) {
+      journalMessage.textContent = 'This timer is active on this device. Finish or discard it on the Brew tab.';
+      return;
+    }
+    resultBrewId = brewId;
+    try {
+      const [brew, library] = await Promise.all([api(`/api/brews/${encodeURIComponent(brewId)}`), api('/api/bags')]);
+      if (resultBrewId !== brewId) return;
+      if (!['completed', 'discarded'].includes(brew.status)) throw new Error('Finish or discard this brew before changing its coffee bag.');
+      resultEditor.replaceChildren();
+      const form = node('form', null, 'service-form card');
+      const heading = node('h3', 'Correct coffee bag');
+      heading.tabIndex = -1;
+      const grid = node('div', null, 'form-grid');
+      const bag = field(grid, 'Coffee used', 'bagId', brew.bagId, 'text', [
+        ['', 'No bag / unlinked coffee'],
+        ...library.bags.map(item => [item.id, `${bagName(item)}${item.archived ? ' (archived)' : ''}`]),
+      ]);
+      const message = notice();
+      const row = node('div', null, 'button-row');
+      const save = node('button', 'Save bag change', 'primary');
+      save.type = 'submit';
+      row.append(save, button('Cancel', () => { resultBrewId = null; resultEditor.replaceChildren(); }));
+      form.append(heading, node('p', `Currently recorded: ${bagName(brew.bagSnapshot)}.`, 'muted'), grid,
+        node('p', `Changing the bag moves this brew’s ${brew.dose} g usage from the old bag to the selected bag and updates its saved coffee name and caffeine type. No bag leaves the dose unassigned. Ratings, notes, servings, and entered caffeine amounts stay unchanged.`, 'notice'), message, row);
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        action(save, message, async () => {
+          if (getActiveBrewId() === brewId) throw new Error('Finish or discard the active timer before changing its coffee bag.');
+          await mutate(`/api/brews/${encodeURIComponent(brewId)}`, { method: 'PATCH', body: { bagId: bag.value || null } });
+          resultBrewId = null;
+          resultEditor.replaceChildren();
+          const results = await Promise.allSettled([refreshJournal(), refreshBags()]);
+          journalMessage.textContent = results.some(result => result.status === 'rejected')
+            ? 'Coffee bag corrected, but some views could not refresh. Reload to see updated history and inventory.'
+            : 'Coffee bag corrected. History and bag usage are updated.';
+          journalMessage.focus();
+        });
+      });
+      resultEditor.append(form);
+      heading.focus();
+      form.scrollIntoView({ block: 'nearest' });
+    } catch (error) { journalMessage.textContent = `Could not open bag correction: ${error.message}`; throw error; }
   }
 
   async function showResults(brewId) {

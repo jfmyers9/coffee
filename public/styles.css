@@ -129,6 +129,8 @@ footer span { font: 10px sans-serif; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .form-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 13px; font-weight: 550; }
 .form-field input, .form-field textarea, .form-field select { width: 100%; min-width: 0; padding: 12px; font-weight: 400; font-size: 16px; background: var(--card); }
+/* WebKit can expose long option text as page overflow even when the select fits. */
+.form-field select { overflow: hidden; text-overflow: ellipsis; }
 .form-field input[type="file"] { font-size: 12px; padding: 10px 0; border: 0; }
 .star-rating legend { font-size: 13px; font-weight: 550; margin-bottom: 8px; }
 .rating-stars { display: flex; }

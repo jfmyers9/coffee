@@ -53,8 +53,9 @@ export function bagInput(body, partial = false) {
   return value;
 }
 export function brewPatch(body) {
-  keys(body, ['status', 'elapsedSeconds', 'rating', 'taste', 'notes', 'waterActual', 'servings', 'finishedAt']);
+  keys(body, ['bagId', 'status', 'elapsedSeconds', 'rating', 'taste', 'notes', 'waterActual', 'servings', 'finishedAt']);
   const result = {};
+  if ('bagId' in body) result.bagId = body.bagId === null ? null : uuid(body.bagId);
   if ('finishedAt' in body) result.finishedAt = timestamp(body.finishedAt, 'finishedAt');
   if ('status' in body) result.status = choice(body.status, 'status', ['brewing', 'completed', 'discarded']);
   if ('elapsedSeconds' in body) result.elapsedSeconds = number(body.elapsedSeconds, 'elapsedSeconds', 0, 86400);

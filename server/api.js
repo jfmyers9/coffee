@@ -186,13 +186,27 @@ export async function api({ pool, recipes, method, url, body }) {
         if (Date.parse(patch.finishedAt) < Date.parse(existing.startedAt) || Date.parse(patch.finishedAt) > Date.now() + 5 * 60 * 1000) invalid('finishedAt must follow startedAt and not be in the future');
       }
       const data = { ...existing, ...patch };
+      if ('bagId' in patch) {
+        if (existing.status === 'brewing') throw new HttpError(409, 'Finish or discard this brew before changing its coffee bag');
+        if (patch.bagId !== existing.bagId) {
+          data.bagSnapshot = null;
+          if (patch.bagId) {
+            const bag = await client.query('SELECT data FROM bags WHERE id=$1 FOR SHARE', [patch.bagId]);
+            if (!bag.rowCount) throw new HttpError(404, 'Bag not found');
+            const { name, roaster, caffeineType } = bag.rows[0].data;
+            data.bagSnapshot = { name, roaster, caffeineType };
+          }
+        }
+      }
       // Delayed progress writes must not move a persisted timer backwards.
       data.elapsedSeconds = Math.max(existing.elapsedSeconds, data.elapsedSeconds);
       if (existing.status === 'brewing' && data.status !== 'brewing') {
         data.finishedAt = patch.finishedAt || new Date().toISOString();
         if (Date.parse(data.finishedAt) < Date.parse(data.startedAt)) invalid('finishedAt must follow startedAt');
       }
-      await client.query('UPDATE brews SET data=$2,status=$3 WHERE id=$1', [id, data, data.status]);
+      // Keep inventory/filtering and the displayed snapshot in the same transaction.
+      // The original create request stays unchanged so old outbox retries remain safe.
+      await client.query('UPDATE brews SET data=$2,status=$3,bag_id=$4 WHERE id=$1', [id, data, data.status, data.bagId]);
       return data;
     }) };
   }
