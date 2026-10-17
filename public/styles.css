@@ -129,8 +129,9 @@ footer span { font: 10px sans-serif; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .form-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 13px; font-weight: 550; }
 .form-field input, .form-field textarea, .form-field select { width: 100%; min-width: 0; padding: 12px; font-weight: 400; font-size: 16px; background: var(--card); }
-/* WebKit can expose long option text as page overflow even when the select fits. */
-.form-field select { overflow: hidden; text-overflow: ellipsis; }
+/* Linux WebKit's native menu can overflow despite overflow:hidden. Keep the native
+   select behavior, but draw its arrow ourselves so clipping works on every OS. */
+.form-field select { appearance: none; overflow: hidden; text-overflow: ellipsis; padding-right: 36px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23243e36' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 12px 8px; }
 .form-field input[type="file"] { font-size: 12px; padding: 10px 0; border: 0; }
 .star-rating legend { font-size: 13px; font-weight: 550; margin-bottom: 8px; }
 .rating-stars { display: flex; }
