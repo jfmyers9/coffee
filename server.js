@@ -10,7 +10,8 @@ import { HttpError } from './server/validation.js';
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
-  ...['app', 'recipe', 'timer', 'sound', 'storage', 'service', 'api', 'sync'].map(name => [`/${name}.js`, [`${name}.js`, 'text/javascript; charset=utf-8']]),
+  ...['app', 'recipe', 'timer', 'sound', 'notifications', 'notifications-worker', 'storage', 'service', 'api', 'sync'].map(name => [`/${name}.js`, [`${name}.js`, 'text/javascript; charset=utf-8']]),
+  ['/manifest.webmanifest', ['manifest.webmanifest', 'application/manifest+json']],
   ['/icon.svg', ['icon.svg', 'image/svg+xml']],
   ['/favicon.ico', ['favicon.ico', 'image/vnd.microsoft.icon']],
   ['/apple-touch-icon.png', ['apple-touch-icon.png', 'image/png']],

@@ -1,0 +1,11 @@
+{
+  "id": "/",
+  "name": "Morning Coffee",
+  "short_name": "Coffee",
+  "start_url": "/#brew",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f2e9",
+  "theme_color": "#f6f2e9",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

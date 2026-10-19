@@ -5,6 +5,7 @@ import { api, newId } from './api.js';
 import { initService, bagStockWarning } from './service.js';
 import { queueBrew, flushBrews, watchSync, acceptServerVersions, forgetDeletedBrew } from './sync.js';
 import { createPhaseSound } from './sound.js';
+import { createBagNotifications } from './notifications.js';
 
 const $ = id => document.getElementById(id);
 const setText = (id, value) => {
@@ -26,6 +27,20 @@ async function main() {
       : !phaseSound.enabled ? 'Phase sound is muted. This preference is saved in this browser.'
       : phaseSound.ready ? 'Chime ready. Keep this page open and your device volume up; locked screens may silence it.'
       : 'Start or resume to enable the chime. After a reload, tap Test sound. Check device volume if you cannot hear it.');
+  }
+  let notificationBusy = false;
+  const bagNotifications = createBagNotifications({ onChange: renderNotificationControls });
+  function renderNotificationControls() {
+    const enabled = bagNotifications.enabled;
+    $('stock-notifications').disabled = notificationBusy || !bagNotifications.supported || (!enabled && bagNotifications.permission === 'denied');
+    $('stock-notifications').setAttribute('aria-pressed', String(enabled));
+    setText('stock-notifications', enabled ? 'Disable low-coffee notifications' : 'Enable low-coffee notifications');
+    setText('stock-notification-hint', !bagNotifications.supported
+      ? 'System notifications need HTTPS and browser support. On iPhone/iPad, add Morning Coffee to your Home Screen and open it there. In-app warnings still work.'
+      : bagNotifications.error || (bagNotifications.permission === 'denied'
+        ? 'Notifications are blocked. Allow them in browser/site settings to enable restock reminders. In-app warnings still work.'
+        : enabled ? 'On for this device. Notifies once per bag while it stays at 80 g or less. The app must be open to check inventory.'
+        : 'Get a system notification when an active bag has 80 g or less. The app must be open to check inventory.'));
   }
   const brewers = [...new Map(recipes.map(item => [item.brewer, item])).keys()];
   const selectedByBrewer = {};
@@ -455,6 +470,15 @@ async function main() {
     setText('grind', grindSetting());
     persist();
   });
+  $('stock-notifications').addEventListener('click', async () => {
+    if (notificationBusy) return;
+    notificationBusy = true;
+    // Call before any await to preserve the browser's permission-request gesture.
+    const operation = bagNotifications.enabled ? bagNotifications.disable() : bagNotifications.enable();
+    renderNotificationControls();
+    try { await operation; }
+    finally { notificationBusy = false; renderNotificationControls(); }
+  });
   $('phase-sound').addEventListener('click', () => {
     phaseSound.setEnabled(!phaseSound.enabled);
     if (phaseSound.enabled) void phaseSound.unlock();
@@ -579,8 +603,11 @@ async function main() {
   });
   document.addEventListener('visibilitychange', () => {
     renderTimer();
+    renderNotificationControls();
+    if (document.visibilityState === 'visible') void bagNotifications.update();
     void syncWakeLock();
   });
+  renderNotificationControls();
   renderSoundControls();
   $('start').disabled = false;
   renderRecipe();
@@ -637,7 +664,7 @@ async function main() {
     recipes,
     getActiveBrewId: () => timer && timer.status !== 'finished' ? brewId : null,
     onNavigate: navigate,
-    onBagsChanged: renderBagHint,
+    onBagsChanged: ({ bags }) => { renderBagHint(); void bagNotifications.update(bags); },
     onServiceChange: async () => { await Promise.allSettled([refreshSummary(), refreshLastBrew()]); },
     onBrewDeleted: forgetDeletedBrew,
     onBrewAgain: brewAgain,
