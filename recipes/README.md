@@ -109,8 +109,11 @@ The displayed ratio uses the unrounded quantities.
 This cumulative-rounding rule can move intermediate targets by 1 g at some
 non-default doses compared with the old engine, which rounded the bloom and
 total before splitting the remaining water. Final water/ice totals are unchanged.
-Hot V60 and Chemex now use dose-scaled pour timers targeting about 5 g/s;
-their bloom-end and total-time targets are preserved. Japanese Iced timing is unchanged.
+Hot V60 and Chemex use dose-scaled pour timers targeting about 5 g/s.
+Both retain the 0:45 bloom end; V60 retains its total-time target. Chemex
+supports 20–60 g for an assumed 6-cup brewer and uses a fixed 1:47 drawdown
+allowance after pouring, so its total guide time grows with dose.
+Japanese Iced timing is unchanged.
 
 ## Timers
 

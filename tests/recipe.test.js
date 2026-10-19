@@ -35,7 +35,8 @@ for (const [brewer, config] of Object.entries(BREWERS)) {
         cursor = step.end;
         target = step.target;
       }
-      assert.equal(cursor, config.finish);
+      if (brewer === 'chemex') assert.equal(recipe.steps.at(-1).end - recipe.steps.at(-1).start, 107);
+      else assert.equal(cursor, config.finish);
     }
   });
 }
@@ -63,8 +64,27 @@ test('Chemex default pours use a comfortable stream with unchanged cumulative ta
   assert.equal(currentStep(recipe, 270), -1);
 });
 
+test('six-cup Chemex supports larger batches without shortening drawdown', () => {
+  for (const [dose, water, duration] of [[36, 576, 285], [45.1, 722, 309], [48, 768, 318], [54, 864, 333], [60, 960, 348]]) {
+    const recipe = createRecipe('chemex', dose);
+    assert.equal(recipe.size, '6 cup');
+    assert.equal(recipe.max, 60);
+    assert.equal(recipe.water, water);
+    assert.equal(recipe.ratio, 16);
+    assert.equal(recipe.duration, duration);
+    assert.equal(recipe.steps.at(-1).end - recipe.steps.at(-1).start, 107);
+    assert.match(recipe.prep, /filter and carafe levels/);
+    assert.match(recipe.steps.at(-1).instruction, /finish when drained/);
+  }
+  const recipe = createRecipe('chemex', 60);
+  assert.deepEqual(recipe.steps.filter(step => step.pouring).map(step => step.target), [180, 440, 700, 960]);
+  assert.equal(currentStep(recipe, 241), 7);
+  assert.equal(currentStep(recipe, 270), 7);
+  assert.equal(currentStep(recipe, 348), -1);
+});
+
 test('invalid recipes are rejected rather than silently clamped', () => {
-  for (const [brewer, dose] of [['v60', NaN], ['v60', 0], ['v60', 31], ['chemex', 19], ['chemex', 46], ['v60', 20.05], ['v60', '20'], ['aeropress', 20], ['constructor', 20]]) {
+  for (const [brewer, dose] of [['v60', NaN], ['v60', 0], ['v60', 31], ['chemex', 19], ['chemex', 60.1], ['chemex', 61], ['v60', 20.05], ['v60', '20'], ['aeropress', 20], ['constructor', 20]]) {
     assert.throws(() => createRecipe(brewer, dose), RangeError);
   }
 });
@@ -77,7 +97,7 @@ test('clock formatting', () => {
 
 test('recipe instructions format absolute and relative timers as minutes and seconds', () => {
   const recipe = createRecipe('chemex', 30);
-  assert.match(recipe.steps.at(-1).instruction, /until 4:30 on the brew clock/);
+  assert.match(recipe.steps.at(-1).instruction, /about 1:47/);
   for (const step of recipe.steps) {
     assert.ok(!/\d+ seconds/.test(step.instruction));
   }
