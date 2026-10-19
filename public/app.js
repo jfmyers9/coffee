@@ -4,6 +4,7 @@ import { readState, saveState } from './storage.js';
 import { api, newId } from './api.js';
 import { initService } from './service.js';
 import { queueBrew, flushBrews, watchSync, acceptServerVersions, forgetDeletedBrew } from './sync.js';
+import { createPhaseSound } from './sound.js';
 
 const $ = id => document.getElementById(id);
 const setText = (id, value) => {
@@ -14,6 +15,18 @@ async function main() {
   const { recipes } = await api('/api/recipes');
   if (!Array.isArray(recipes) || !recipes.length) throw new Error('No recipes available.');
   const saved = readState();
+  const phaseSound = createPhaseSound({ enabled: saved.soundEnabled !== false, onChange: renderSoundControls });
+  let previousPhase = null;
+  function renderSoundControls() {
+    $('phase-sound').disabled = !phaseSound.supported;
+    $('phase-sound').setAttribute('aria-pressed', String(phaseSound.enabled));
+    setText('phase-sound', `Phase sound: ${phaseSound.enabled ? 'on' : 'off'}`);
+    $('test-sound').disabled = !phaseSound.supported || !phaseSound.enabled;
+    setText('sound-hint', !phaseSound.supported ? 'Phase sound is unavailable in this browser. The visual timer still works.'
+      : !phaseSound.enabled ? 'Phase sound is muted. This preference is saved in this browser.'
+      : phaseSound.ready ? 'Chime ready. Keep this page open and your device volume up; locked screens may silence it.'
+      : 'Start or resume to enable the chime. After a reload, tap Test sound. Check device volume if you cannot hear it.');
+  }
   const brewers = [...new Map(recipes.map(item => [item.brewer, item])).keys()];
   const selectedByBrewer = {};
   for (const brewer of brewers) {
@@ -225,7 +238,7 @@ async function main() {
   }
 
   function persist() {
-    $('storage-warning').hidden = saveState({ brewer, recipeId, selectedByBrewer, doses, notes, bagNotes, temperatureF, temperatures,
+    $('storage-warning').hidden = saveState({ brewer, recipeId, selectedByBrewer, doses, notes, bagNotes, temperatureF, temperatures, soundEnabled: phaseSound.enabled,
       session: timer ? { brewer, recipeId, definition, dose: recipe.dose, timer, brewId, bagId: sessionBagId, temperatureF, grindSetting: sessionGrindSetting } : null });
   }
 
@@ -338,6 +351,11 @@ async function main() {
     const position = recipeProgress(recipe, seconds, timer?.manualCompletions);
     const { index } = position;
     const finished = timer?.status === 'finished';
+    // Establish a baseline on start/reload and consume changes even while muted.
+    // A delayed tick emits one cue for the current phase, never a backlog.
+    const phase = timer && !finished ? index : null;
+    if (timer?.status === 'running' && previousPhase !== null && phase !== previousPhase) phaseSound.play();
+    previousPhase = phase;
     const active = timer && !finished;
     const step = recipe.steps[index] || recipe.steps.at(-1);
     document.body.classList.toggle('brewing', Boolean(active));
@@ -434,8 +452,17 @@ async function main() {
     setText('grind', grindSetting());
     persist();
   });
+  $('phase-sound').addEventListener('click', () => {
+    phaseSound.setEnabled(!phaseSound.enabled);
+    if (phaseSound.enabled) void phaseSound.unlock();
+    persist();
+  });
+  $('test-sound').addEventListener('click', async () => {
+    if (await phaseSound.unlock()) phaseSound.play();
+  });
   $('start').addEventListener('click', () => {
     if (timer || $('start').disabled) return;
+    void phaseSound.unlock();
     brewId = newId();
     sessionBagId = $('brew-bag').value || null;
     sessionGrindSetting = grindSetting();
@@ -452,6 +479,7 @@ async function main() {
     $('pause').focus({ preventScroll: true });
   });
   $('pause').addEventListener('click', () => {
+    if (timer?.status === 'paused') void phaseSound.unlock();
     timer = timer.status === 'running' ? pauseTimer(timer) : resumeTimer(timer);
     persist();
     renderTimer();
@@ -550,6 +578,7 @@ async function main() {
     renderTimer();
     void syncWakeLock();
   });
+  renderSoundControls();
   $('start').disabled = false;
   renderRecipe();
   persist();

@@ -82,6 +82,8 @@ progress::-moz-progress-bar { background: var(--ink); }
 .active-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .text-button { background: transparent; border: 0; text-decoration: underline; font-size: 12px; min-height: 44px; margin-top: 8px; }
 #wake-message { font-size: 10px; margin: 14px 0 0; }
+.sound-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; }
+#sound-hint { font-size: 11px; margin: 0; }
 .timeline-header { display: flex; justify-content: space-between; align-items: center; margin-top: 28px; }
 .timeline-header h3 { margin: 0; }
 .timeline { list-style: none; padding: 0; margin: 12px 0 0; }
