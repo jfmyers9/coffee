@@ -92,16 +92,20 @@ See the [authoring guide](recipes/README.md) for the supported Cooklang conventi
 | --- | --- | --- |
 | Default coffee | 20 g | 30 g |
 | Supported dose | 12–30 g | 20–60 g |
-| Water | 16 × coffee weight | 16 × coffee weight |
+| Water | 16 × coffee weight by default; ratio editable | 16 × coffee weight by default; ratio editable |
 | Original Encore starting dial | 15 | 20 |
 | Temperature | 203°F default (editable) | 203°F default (editable) |
 | Bloom | 3 × coffee weight, ~12s at 20 g; rest until 0:45 | 3 × coffee weight, ~18s at 30 g; rest until 0:45 |
 | Remaining water | Three equal pours, ~17s each at 20 g, with 20s rests | Three equal pours, ~26s each at 30 g, with 20s rests |
-| Target total time | 3:30 | 4:30 at 30 g; about 5:33 at 54 g |
+| Target total time at 1:16 | 3:30 at 20 g | 4:30 at 30 g; about 5:33 at 54 g |
 
-Hot V60 and Chemex pours target **about 5 g/s**. Bloom and main-pour durations scale with dose and round to whole seconds, keeping a comfortable stream at smaller doses instead of requiring a trickle. Bloom still ends at 0:45 and inter-pour rests stay 20 seconds. V60 retains its 3:30 total-time target. Chemex allows about **1:47 of drawdown after the final pour**, so larger batches get longer guides instead of being squeezed into 4:30. Finish when drained; these are starting allowances, not deadlines. Water quantities, ratios, grind suggestions, and temperatures are unchanged.
+Hot V60 and Chemex have a **Water-to-coffee ratio** setting, default **1:16**, remembered independently per recipe in this browser. Enter **10–25** in **0.1 increments** (the app's supported adjustment range, not a brewer capacity rating). For your 54 g Chemex batch, **1:15 uses 810 g water** and **1:16 uses 864 g**. Targets and pour times update together. The bloom remains 3× the coffee dose; the remaining water is split into three pours. Iced and French press keep their specialized ratios and do not show this control.
 
-Chemex now supports **20–60 g**, assuming a 6-cup brewer. For example, **48 g coffee uses 768 g water** and **54 g uses 864 g water**. The 60 g upper end uses 960 g of input water, not beverage yield: grounds retain some water, but actual yield varies. Watch both filter and carafe headroom, pause the guide rather than overflow, and split a large batch if necessary. Larger batches may need a slightly coarser grind and longer drainage.
+Hot V60 and Chemex pours target **about 5 g/s**. Bloom and main-pour durations scale with dose; main pours also scale with the selected ratio. Timers round to whole seconds. Bloom still ends at 0:45 and inter-pour rests stay 20 seconds. After the last pour, V60 allows about **1:14** for drawdown and Chemex about **1:47**, so more water gets a longer guide instead of less drainage time. The default-dose 1:16 guides remain 3:30 and 4:30 respectively. Finish when drained; these are starting allowances, not deadlines.
+
+Chemex supports **20–60 g**, assuming a 6-cup brewer. At the default 1:16 ratio, **48 g coffee uses 768 g water**, **54 g uses 864 g**, and the 60 g upper end uses 960 g. Changing the ratio changes these amounts. Input water is not beverage yield: grounds retain some water, but actual yield varies. Watch both filter and carafe headroom, pause the guide rather than overflow, and split a large batch if necessary. Larger batches may need a slightly coarser grind and longer drainage.
+
+The selected recipe ratio is recorded in the journal/export and restored by **Brew again** and **Repeat this brew**. Active timers retain their ratio and saved recipe definition across reloads, even if preferences or recipe files change. Older brews without an explicit ratio retain their existing snapshot; older queued starts still default to their recipe's ratio. Ratio is fixed once brewing starts; actual water can still be logged separately. Sync pending brews before deploying edited recipe files, as with any recipe revision.
 
 The flow-rate starting point is informed by [Jonathan Gagné's kettle-stream experiments](https://coffeeadastra.com/2020/05/23/the-physics-of-kettle-streams/), which describe using 5 g/s with a Fellow Stagg EKG and adjusting for the coffee. These are app adaptations, **not Gagné's complete recipes or a universal optimum**. Use a steady, comfortable pour; small timing differences are fine. Japanese Iced retains its separate ~3 g/s recipe.
 

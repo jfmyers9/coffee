@@ -20,7 +20,7 @@ async function listBags(client) {
   return { bags: bags.rows.map(presentBag), defaultBagId: settings.rows[0].default_bag_id };
 }
 function brewInput(body) {
-  keys(body, ['id', 'bagId', 'recipeId', 'recipeVersion', 'brewer', 'variant', 'dose', 'temperatureF', 'grindSetting', 'startedAt']);
+  keys(body, ['id', 'bagId', 'recipeId', 'recipeVersion', 'brewer', 'variant', 'dose', 'ratio', 'temperatureF', 'grindSetting', 'startedAt']);
   let recipeId = body.recipeId;
   if (recipeId === undefined) {
     // Legacy outboxes identify one of the original recipes by brewer/variant.
@@ -35,6 +35,7 @@ function brewInput(body) {
     grindSetting: string(body.grindSetting, 'grindSetting', 80, true),
     startedAt: body.startedAt === undefined ? null : timestamp(body.startedAt) };
   if (body.recipeVersion !== undefined) input.recipeVersion = string(body.recipeVersion, 'recipeVersion', 64, true);
+  if (body.ratio !== undefined) input.ratio = number(body.ratio, 'ratio', 10, 25);
   return input;
 }
 function normalizeLegacyRequest(request) {
@@ -115,8 +116,8 @@ export async function api({ pool, recipes, method, url, body }) {
       let definition, recipe;
       try {
         definition = resolveRecipe(recipes, input);
-        recipe = createRecipe(definition, input.dose);
-      } catch { invalid('Unknown recipe or invalid dose (use supported range and 0.1 g increments)'); }
+        recipe = createRecipe(definition, input.dose, input.ratio);
+      } catch { invalid('Unknown recipe, invalid dose, or unsupported ratio (use supported ranges and 0.1 increments)'); }
       if (body.brewer !== undefined && body.brewer !== recipe.brewer) invalid('Recipe does not match brewer');
       if (body.variant !== undefined && body.variant !== recipe.variant) invalid('Recipe does not match variant');
       if (input.recipeVersion && input.recipeVersion !== recipe.version) throw new HttpError(409, 'Recipe changed since this brew was prepared. Restore its prior file revision to sync this queued brew; reload before preparing a new brew.');

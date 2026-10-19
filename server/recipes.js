@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { parser } from './cooklang.js';
-import { createRecipe } from '../public/recipe.js';
+import { createRecipe, validRatio, RATIO_MIN, RATIO_MAX } from '../public/recipe.js';
 
 function fail(message) { throw new Error(message); }
 function numeric(quantity, units) {
@@ -41,7 +41,7 @@ export function parseRecipe(source, filename = '<recipe>') {
     const metadata = raw?.raw_metadata?.map;
     const meta = metadata?.coffee;
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) fail('Missing coffee metadata');
-    const allowed = ['id', 'brewer', 'brewerName', 'label', 'size', 'min', 'max', 'dose', 'grind', 'texture', 'temperature', 'temperatureF', 'order', 'icon', 'description', 'legacyVariant'];
+    const allowed = ['id', 'brewer', 'brewerName', 'label', 'size', 'min', 'max', 'dose', 'grind', 'texture', 'temperature', 'temperatureF', 'order', 'icon', 'description', 'legacyVariant', 'ratio'];
     if (Object.keys(meta).some(key => !allowed.includes(key))) fail('Unknown coffee metadata field');
     for (const key of ['id', 'brewer', 'brewerName', 'label', 'size', 'grind', 'texture', 'temperature']) {
       if (typeof meta[key] !== 'string' || !meta[key].trim() || meta[key].length > 1000) fail(`Invalid coffee.${key}`);
@@ -54,6 +54,7 @@ export function parseRecipe(source, filename = '<recipe>') {
     if (meta.min > meta.dose || meta.dose > meta.max) fail('Default dose must be within min/max');
     if (meta.order !== undefined && !Number.isFinite(meta.order)) fail('Invalid coffee.order');
     if (meta.temperatureF !== undefined && (!Number.isInteger(meta.temperatureF) || meta.temperatureF < 140 || meta.temperatureF > 212)) fail('Invalid coffee.temperatureF: use an integer from 140–212');
+    if (meta.ratio !== undefined && !validRatio(meta.ratio)) fail(`coffee.ratio must be ${RATIO_MIN}–${RATIO_MAX} in 0.1 increments`);
     const attribution = {};
     for (const key of ['author', 'source']) {
       if (metadata[key] === undefined) continue;
@@ -114,7 +115,9 @@ export function parseRecipe(source, filename = '<recipe>') {
       version: createHash('sha256').update(source).digest('hex') };
     // Validate every selectable dose, not just the default: scaled pours can
     // otherwise overrun an absolute timer mark at the edge of the dose range.
-    for (let dose = Math.round(meta.min * 10); dose <= Math.round(meta.max * 10); dose++) createRecipe(definition, dose / 10);
+    for (let dose = Math.round(meta.min * 10); dose <= Math.round(meta.max * 10); dose++) {
+      for (const ratio of meta.ratio === undefined ? [undefined] : [RATIO_MIN, meta.ratio, RATIO_MAX]) createRecipe(definition, dose / 10, ratio);
+    }
     return definition;
   } catch (error) { throw new Error(`${filename}: ${error.message ?? error}`, { cause: error }); }
 }

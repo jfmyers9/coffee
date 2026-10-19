@@ -37,6 +37,7 @@
           <label class="field-label" for="dose">Coffee beans</label>
           <div class="dose-control"><button type="button" id="less" aria-label="Use fewer beans">−</button><div><input id="dose" type="number" inputmode="decimal" min="12" max="30" step="0.1" value="20" aria-describedby="dose-hint dose-error"><span>g</span></div><button type="button" id="more" aria-label="Use more beans">+</button></div>
           <p id="dose-hint" class="hint"></p><p id="dose-error" class="error" role="alert" hidden></p>
+          <div id="ratio-field" hidden><label class="field-label" for="ratio-setting">Water-to-coffee ratio (1 : …)</label><input id="ratio-setting" type="number" inputmode="decimal" min="10" max="25" step="0.1" value="16" aria-describedby="ratio-hint ratio-error"><p id="ratio-hint" class="hint">Grams of water per gram of coffee. Default 16; remembered for this recipe.</p><p id="ratio-error" class="error" role="alert" hidden></p></div>
           <label class="field-label" for="temperature-f">Water temperature (°F)</label>
           <input id="temperature-f" type="number" min="140" max="212" step="1" value="203" inputmode="numeric" aria-describedby="temperature-hint">
           <p class="hint" id="temperature-hint"></p>

@@ -7,12 +7,31 @@ export function resolveRecipe(recipes, { recipeId, brewer, variant = 'hot' } = {
   return definition;
 }
 
-export function createRecipe(definition, dose = definition?.dose) {
+export const RATIO_MIN = 10, RATIO_MAX = 25;
+export const validRatio = value => Number.isFinite(value) && value >= RATIO_MIN && value <= RATIO_MAX
+  && Math.abs(value * 10 - Math.round(value * 10)) < 1e-8;
+
+export function createRecipe(definition, dose = definition?.dose, ratio = definition?.ratio) {
   if (!definition || typeof definition.id !== 'string' || !Number.isFinite(definition.min) || !Number.isFinite(definition.max) || !Number.isFinite(definition.dose) || definition.dose <= 0 || !Number.isFinite(dose) || dose < definition.min || dose > definition.max || Math.abs(dose * 10 - Math.round(dose * 10)) > 1e-8) {
     throw new RangeError('Choose a supported recipe and a dose in range (0.1 g increments).');
   }
+  const adjustable = definition.ratio !== undefined;
+  if ((ratio !== undefined && (!adjustable || !validRatio(ratio))) || (adjustable && !validRatio(definition.ratio))) {
+    throw new RangeError(`Choose a water ratio from 1:${RATIO_MIN} to 1:${RATIO_MAX} in 0.1 increments for an adjustable recipe.`);
+  }
+  const waters = definition.steps.flatMap(step => step.items.filter(item => item.type === 'ingredient' && item.name === 'water'));
+  const bloom = waters[0];
+  const baseWater = waters.reduce((sum, item) => sum + item.amount, 0);
+  if (adjustable && (waters.length < 2 || waters.some(item => item.fixed)
+    || definition.prep.some(item => item.type === 'ingredient' && item.name === 'ice') || bloom.amount / definition.dose >= RATIO_MIN
+    || Math.abs(baseWater / definition.dose - definition.ratio) > 1e-8
+    || definition.steps.some(step => step.items.some(item => item.type === 'ingredient' && item.name === 'water') && step.timer?.mode !== 'scaled'))) {
+    throw new RangeError('Adjustable recipes need a scalable bloom and pours with scaled timers, no ice, and a default ratio matching their water.');
+  }
   const factor = dose / definition.dose;
-  const amount = item => item.amount * (item.fixed ? 1 : factor);
+  // Keep the bloom dose-based; only the remaining water and its pour time change.
+  const waterFactor = adjustable ? (dose * ratio - bloom.amount * factor) / ((baseWater - bloom.amount) * factor) : 1;
+  const amount = item => item.amount * (item.fixed ? 1 : factor) * (item.name === 'water' && item !== bloom ? waterFactor : 1);
   const render = (items, duration, added) => items.map(item => {
     if (item.type === 'text') return item.text;
     if (item.type === 'cookware') return item.name;
@@ -24,7 +43,8 @@ export function createRecipe(definition, dose = definition?.dose) {
   let cursor = 0, cumulative = 0, previous = 0;
   const steps = definition.steps.map(step => {
     const manual = step.timer == null;
-    const seconds = manual ? 0 : step.timer.mode === 'scaled' ? Math.round(step.timer.seconds * factor + 1e-9) : step.timer.seconds;
+    const pourFactor = step.items.some(item => item.type === 'ingredient' && item.name === 'water' && item !== bloom) ? waterFactor : 1;
+    const seconds = manual ? 0 : step.timer.mode === 'scaled' ? Math.round(step.timer.seconds * factor * pourFactor + 1e-9) : step.timer.seconds;
     const duration = step.timer?.mode === 'until' ? seconds - cursor : seconds;
     cumulative += step.items.filter(item => item.type === 'ingredient' && item.name === 'water').reduce((sum, item) => sum + amount(item), 0);
     // Round cumulative totals, not individual pours, so rounding never loses water.

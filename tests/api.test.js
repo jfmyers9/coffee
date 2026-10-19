@@ -58,6 +58,39 @@ test('Postgres API integration', { skip: !databaseUrl && 'Set TEST_DATABASE_URL 
   const createBag = extra => ok('/api/bags', 'POST', bagInput(extra), 201);
   const createBrew = extra => ok('/api/brews', 'POST', brewInput(extra), 201);
 
+  await t.test('adjustable ratios persist in immutable snapshots and idempotent starts', async () => {
+    const bag = await createBag({ weightGrams: 200 });
+    const input = brewInput({ brewer: 'chemex', dose: 54, ratio: 15, bagId: bag.id });
+    const brew = await ok('/api/brews', 'POST', input, 201);
+    assert.equal(brew.ratio, 15);
+    assert.equal(brew.recipe.ratio, 15);
+    assert.equal(brew.water, 810);
+    assert.equal(brew.recipe.duration, 321);
+    assert.equal((await ok(`/api/bags/${bag.id}`)).remainingGrams, 146);
+    assert.deepEqual(await ok('/api/brews', 'POST', input), brew);
+    assert.equal((await request('/api/brews', { method: 'POST', body: { ...input, ratio: 16 } })).status, 409);
+    assert.equal((await ok(`/api/bags/${bag.id}`)).remainingGrams, 146);
+    assert.deepEqual(await ok(`/api/brews/${brew.id}`), brew);
+    assert.equal((await ok('/api/export')).brews.find(item => item.id === brew.id).recipe.ratio, 15);
+    assert.equal((await request(`/api/brews/${brew.id}`, { method: 'PATCH', body: { ratio: 16 } })).status, 400);
+    const legacyInput = brewInput();
+    const legacy = await ok('/api/brews', 'POST', legacyInput, 201);
+    assert.equal(legacy.water, 320);
+    assert.equal(legacy.recipe.ratio, 16);
+    assert.deepEqual(await ok('/api/brews', 'POST', legacyInput), legacy);
+  });
+
+  await t.test('invalid ratios and overrides on non-adjustable recipes are rejected without creating brews', async () => {
+    for (const ratio of ['15', null, 0, 9.9, 25.1, 15.01]) {
+      const input = brewInput({ ratio });
+      assert.equal((await request('/api/brews', { method: 'POST', body: input })).status, 400);
+      assert.equal((await request(`/api/brews/${input.id}`)).status, 404);
+    }
+    for (const extra of [{ variant: 'japanese-iced', dose: 15 }, { recipeId: 'french-press-hoffmann', brewer: undefined, dose: 30 }]) {
+      assert.equal((await request('/api/brews', { method: 'POST', body: brewInput({ ...extra, ratio: 16 }) })).status, 400);
+    }
+  });
+
   await t.test('catalog recipes persist snapshots, reject stale starts, and retry after file removal', async () => {
     const { api } = await import('../server/api.js');
     const { parseRecipe } = await import('../server/recipes.js');

@@ -35,8 +35,7 @@ for (const [brewer, config] of Object.entries(BREWERS)) {
         cursor = step.end;
         target = step.target;
       }
-      if (brewer === 'chemex') assert.equal(recipe.steps.at(-1).end - recipe.steps.at(-1).start, 107);
-      else assert.equal(cursor, config.finish);
+      assert.equal(recipe.steps.at(-1).end - recipe.steps.at(-1).start, brewer === 'chemex' ? 107 : 74);
     }
   });
 }

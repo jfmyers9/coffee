@@ -1,4 +1,4 @@
-import { resolveRecipe, createRecipe, recipeProgress, completeManualStep, formatTime } from './recipe.js';
+import { resolveRecipe, createRecipe, recipeProgress, completeManualStep, formatTime, validRatio } from './recipe.js';
 import { elapsed, startTimer, pauseTimer, resumeTimer, validTimer } from './timer.js';
 import { readState, saveState } from './storage.js';
 import { api, newId } from './api.js';
@@ -73,20 +73,27 @@ async function main() {
     const note = saved.notes?.[key] ?? saved.notes?.[oldKey];
     notes[key] = typeof note === 'string' ? note.slice(0, 80) : '';
   }
+  const ratios = Object.fromEntries(recipes.filter(item => item.ratio !== undefined)
+    .map(item => [item.id, validRatio(saved.ratios?.[item.id]) ? saved.ratios[item.id] : item.ratio]));
+  const preferredRatio = () => {
+    const current = resolveRecipe(recipes, { recipeId });
+    return current.ratio === undefined ? undefined : ratios[recipeId] ?? current.ratio;
+  };
   let definition = resolveRecipe(recipes, { recipeId });
-  let recipe = createRecipe(definition, doses[recipeId]);
+  let recipe = createRecipe(definition, doses[recipeId], preferredRatio());
   let timer = null;
   // Store the definition with active sessions so an edited file cannot change a
   // running timeline on reload. Old sessions still resolve by brewer/variant.
   if (validTimer(saved.session?.timer)) {
     try {
       const restored = saved.session.definition || resolveRecipe(recipes, saved.session);
-      const restoredRecipe = createRecipe(restored, saved.session.dose);
+      const restoredRecipe = createRecipe(restored, saved.session.dose, saved.session.ratio);
       definition = restored;
       recipe = restoredRecipe;
       brewer = recipe.brewer;
       recipeId = definition.id;
       doses[recipeId] = recipe.dose;
+      if (definition.ratio !== undefined) ratios[recipeId] = recipe.ratio;
       notes[recipeId] ??= typeof saved.notes?.[recipeId] === 'string' ? saved.notes[recipeId].slice(0, 80) : '';
       selectedByBrewer[brewer] = recipeId;
       timer = saved.session.timer;
@@ -202,6 +209,7 @@ async function main() {
       setText('last-brew-status', `${brew.recipe?.name ?? brew.brewer} · ${brew.recipe?.label ?? 'Recipe'} · ${new Date(brew.startedAt).toLocaleString()}`);
       const lines = [
         `${brew.dose} g coffee · ${brew.temperatureF}°F · grind ${brew.grindSetting}`,
+        Number.isFinite(brew.ratio ?? brew.recipe?.ratio) ? `Recipe ratio 1:${brew.ratio ?? brew.recipe.ratio}` : '',
         brew.rating == null ? 'Not rated yet' : `Rating: ${brew.rating}/5`,
         brew.taste ? `Taste: ${brew.taste}` : '',
         brew.notes ? `Notes: ${brew.notes}` : 'No tasting notes yet.',
@@ -256,8 +264,8 @@ async function main() {
   }
 
   function persist() {
-    $('storage-warning').hidden = saveState({ brewer, recipeId, selectedByBrewer, doses, notes, bagNotes, temperatureF, temperatures, soundEnabled: phaseSound.enabled,
-      session: timer ? { brewer, recipeId, definition, dose: recipe.dose, timer, brewId, bagId: sessionBagId, temperatureF, grindSetting: sessionGrindSetting } : null });
+    $('storage-warning').hidden = saveState({ brewer, recipeId, selectedByBrewer, doses, notes, bagNotes, temperatureF, temperatures, ratios, soundEnabled: phaseSound.enabled,
+      session: timer ? { brewer, recipeId, definition, dose: recipe.dose, ...(definition.ratio !== undefined ? { ratio: recipe.ratio } : {}), timer, brewId, bagId: sessionBagId, temperatureF, grindSetting: sessionGrindSetting } : null });
   }
 
   async function syncWakeLock() {
@@ -297,6 +305,8 @@ async function main() {
     if (syncDose) $('dose').value = recipe.dose;
     $('dose').min = recipe.min;
     $('dose').max = recipe.max;
+    $('ratio-field').hidden = definition.ratio === undefined;
+    if (syncDose) $('ratio-setting').value = recipe.ratio;
     renderGrind();
     const choices = recipes.filter(item => item.brewer === brewer);
     $('variant-field').hidden = choices.length < 2;
@@ -415,16 +425,27 @@ async function main() {
 
   function updateDose(event) {
     if (timer) return;
+    $('ratio-error').hidden = true;
+    $('ratio-setting').setAttribute('aria-invalid', 'false');
     try {
       const temperature = $('temperature-f').valueAsNumber;
       if (!Number.isInteger(temperature) || temperature < 140 || temperature > 212) {
         throw new Error('Enter a water temperature from 140–212°F in whole degrees.');
       }
       definition = resolveRecipe(recipes, { recipeId });
-      recipe = createRecipe(definition, $('dose').valueAsNumber);
+      const ratio = definition.ratio === undefined ? undefined : $('ratio-setting').valueAsNumber;
+      if (definition.ratio !== undefined && !validRatio(ratio)) {
+        setText('ratio-error', 'Enter a water ratio from 1:10 to 1:25 in 0.1 increments.');
+        $('ratio-error').hidden = false;
+        $('ratio-setting').setAttribute('aria-invalid', 'true');
+        $('start').disabled = true;
+        return;
+      }
+      recipe = createRecipe(definition, $('dose').valueAsNumber, ratio);
       temperatureF = temperature;
       if (event?.target === $('temperature-f') || temperature !== recipe.temperatureF || temperatures[recipeId] != null) temperatures[recipeId] = temperature;
       doses[preferenceKey()] = recipe.dose;
+      if (definition.ratio !== undefined) ratios[recipeId] = recipe.ratio;
       $('dose-error').hidden = true;
       $('dose').setAttribute('aria-invalid', 'false');
       $('start').disabled = false;
@@ -444,6 +465,7 @@ async function main() {
       brewer = button.dataset.brewer;
       recipeId = selectedByBrewer[brewer];
       $('temperature-f').value = preferredTemperature();
+      $('ratio-setting').value = preferredRatio() ?? 16;
       $('dose').value = doses[preferenceKey()];
       updateDose();
     });
@@ -453,10 +475,12 @@ async function main() {
     recipeId = $('recipe-variant').value;
     selectedByBrewer[brewer] = recipeId;
     $('temperature-f').value = preferredTemperature();
+    $('ratio-setting').value = preferredRatio() ?? 16;
     $('dose').value = doses[preferenceKey()];
     updateDose();
   });
   $('dose').addEventListener('input', updateDose);
+  $('ratio-setting').addEventListener('input', updateDose);
   $('temperature-f').addEventListener('input', updateDose);
   for (const [id, delta] of [['less', -1], ['more', 1]]) {
     $(id).addEventListener('click', () => {
@@ -496,6 +520,7 @@ async function main() {
     timer = startTimer();
     void queueBrew('/api/brews', 'POST', {
       id: brewId, bagId: sessionBagId, recipeId, recipeVersion: definition.version, dose: recipe.dose,
+      ...(definition.ratio !== undefined ? { ratio: recipe.ratio } : {}),
       temperatureF, grindSetting: sessionGrindSetting,
       startedAt: new Date(timer.startedAt).toISOString(),
     });
@@ -541,7 +566,7 @@ async function main() {
     definition = resolveRecipe(recipes, { recipeId });
     brewer = definition.brewer;
     selectedByBrewer[brewer] = recipeId;
-    recipe = createRecipe(definition, doses[recipeId] >= definition.min && doses[recipeId] <= definition.max ? doses[recipeId] : definition.dose);
+    recipe = createRecipe(definition, doses[recipeId] >= definition.min && doses[recipeId] <= definition.max ? doses[recipeId] : definition.dose, preferredRatio());
     temperatureF = preferredTemperature();
     $('temperature-f').value = temperatureF;
     persist();
@@ -630,13 +655,14 @@ async function main() {
     recipeId = definition.id;
     selectedByBrewer[brewer] = recipeId;
     doses[preferenceKey()] = brew.dose;
+    if (definition.ratio !== undefined) ratios[recipeId] = validRatio(brew.ratio ?? brew.recipe?.ratio) ? brew.ratio ?? brew.recipe.ratio : definition.ratio;
     const bag = service.getBag(brew.bagId);
     service.setSelectedBag(bag && !bag.archived ? brew.bagId : null);
     saveGrind(brew.grindSetting);
     temperatureF = brew.temperatureF;
     temperatures[recipeId] = temperatureF;
     $('temperature-f').value = temperatureF;
-    recipe = createRecipe(definition);
+    recipe = createRecipe(definition, undefined, preferredRatio());
     renderRecipe();
     $('dose').value = brew.dose;
     updateDose();

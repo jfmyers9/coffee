@@ -66,6 +66,7 @@ Recipes sharing a brewer must use the same `brewerName`. Each recipe's
 - `temperatureF`: numeric starting temperature, an integer from 140–212°F.
   Switching recipes uses this default unless the user saved an override for
   that recipe. Temperature overrides are remembered per recipe.
+- Optional `ratio`: default water-to-coffee ratio and opt-in to the adjustable-ratio control, numeric 10–25 in 0.1 increments. It must match total recipe water divided by the default dose. Adjustable recipes require at least two scalable water additions, scaled timers on all pours, no brewing ice, and a first (bloom) addition below 10× the dose. The bloom stays dose-based; subsequent quantities and pour durations scale to the selected ratio. Use relative drawdown timers so higher ratios retain drainage time. Only the hot V60/Chemex files currently opt in, at 16.
 - `order`: ascending menu order, then ID. The first recipe is the default.
 - Optional `icon` and `description`: brewer button presentation; the first
   recipe for that brewer supplies these.
@@ -110,9 +111,9 @@ This cumulative-rounding rule can move intermediate targets by 1 g at some
 non-default doses compared with the old engine, which rounded the bloom and
 total before splitting the remaining water. Final water/ice totals are unchanged.
 Hot V60 and Chemex use dose-scaled pour timers targeting about 5 g/s.
-Both retain the 0:45 bloom end; V60 retains its total-time target. Chemex
-supports 20–60 g for an assumed 6-cup brewer and uses a fixed 1:47 drawdown
-allowance after pouring, so its total guide time grows with dose.
+Both retain the 0:45 bloom end. V60 uses a fixed 1:14 drawdown allowance;
+Chemex supports 20–60 g for an assumed 6-cup brewer and uses 1:47.
+Total guide time therefore grows with dose and selected ratio.
 Japanese Iced timing is unchanged.
 
 ## Timers
@@ -144,9 +145,10 @@ Break the crust and skim the foam. Continue when ready.
 Leave undisturbed for ~{5%minutes}.
 ```
 
-Validation evaluates **every supported dose**, checking that every step lasts
-at least one second when timed, pours add at least one gram, and the timed timeline stays within
-24 hours. This catches scaled pours that would overrun an `until` mark.
+Validation evaluates **every supported dose**, at the minimum, default, and
+maximum ratios for adjustable recipes, checking that every step lasts at
+least one second when timed, pours add at least one gram, and the timed timeline
+stays within 24 hours. This catches scaled pours that overrun an `until` mark.
 
 Instructions can describe pressing, stirring, or other actions. Arbitrary formulas,
 parallel timers, optional/hidden ingredients, ingredient references/aliases/notes, and general-purpose cooking
@@ -155,14 +157,14 @@ partially executed. Comments use standard Cooklang `-- comment` syntax.
 
 ## Persistence and editing
 
-Dose/temperature preferences are keyed by recipe ID. Grinder overrides are keyed by bag + recipe, falling back to the browser’s recipe-wide setting and then the file’s grind suggestion. Old browser preferences and
+Dose, temperature, and adjustable-ratio preferences are keyed by recipe ID. Grinder overrides are keyed by bag + recipe, falling back to the browser’s recipe-wide setting and then the file’s grind suggestion. Old browser preferences and
 brewer/variant requests migrate automatically; no database migration is needed.
 Active local timers store their recipe definition, so editing a file cannot
 change an already-running timeline after reload. Journal entries retain the
 server-generated recipe snapshot.
 
 “Brew again” selects the **current** file with that ID using the recorded dose,
-grinder, and temperature. Removed recipes cannot be repeated; their journal
+grinder, temperature, and recipe ratio (when adjustable). Removed recipes cannot be repeated; their journal
 entries remain readable. A dose outside a revised range must be adjusted.
 
 Sync pending brews before changing/removing their files. New starts carry a
