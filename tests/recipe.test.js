@@ -13,6 +13,16 @@ for (const [brewer, config] of Object.entries(BREWERS)) {
       assert.equal(recipe.dose, dose);
       assert.equal(recipe.water, Math.round(dose * 16));
       assert.equal(recipe.steps[0].target, Math.round(dose * 3));
+      const pours = recipe.steps.filter(step => step.pouring);
+      const durations = brewer === 'v60' ? [12, 17, 17, 17] : [18, 26, 26, 26];
+      assert.deepEqual(pours.map(step => step.end - step.start), durations.map(seconds => Math.round(seconds * dose / config.dose)));
+      for (const step of pours) {
+        // Whole-second timers and whole-gram targets need a small rounding tolerance.
+        assert.ok(Math.abs(step.rate - 5) <= 0.5, `${brewer} at ${dose} g: ${step.rate} g/s`);
+        assert.match(step.instruction, /over about/);
+      }
+      assert.equal(recipe.steps[1].end, 45);
+      assert.deepEqual(recipe.steps.filter(step => step.title === 'Let it settle').map(step => step.end - step.start), [20, 20]);
       assert.equal(recipe.steps.at(-1).target, recipe.water);
       assert.equal(recipe.steps.reduce((sum, step) => sum + step.added, 0), recipe.water);
       let cursor = 0;
@@ -34,10 +44,23 @@ test('V60 recipe has clear cumulative targets and exact phase boundaries', () =>
   const recipe = createRecipe('v60', 20);
   assert.deepEqual(recipe.steps.filter(s => s.pouring).map(s => s.target), [60, 147, 233, 320]);
   assert.equal(currentStep(recipe, 0), 0);
-  assert.equal(currentStep(recipe, 14.99), 0);
-  assert.equal(currentStep(recipe, 15), 1);
+  assert.equal(currentStep(recipe, 11.99), 0);
+  assert.equal(currentStep(recipe, 12), 1);
   assert.equal(currentStep(recipe, 45), 2);
+  assert.deepEqual(recipe.steps.filter(step => step.pouring).map(step => [step.start, step.end]), [[0, 12], [45, 62], [82, 99], [119, 136]]);
+  assert.equal(currentStep(recipe, 61.99), 2);
+  assert.equal(currentStep(recipe, 62), 3);
+  assert.equal(currentStep(recipe, 136), 7);
   assert.equal(currentStep(recipe, 210), -1);
+});
+
+test('Chemex default pours use a comfortable stream with unchanged cumulative targets', () => {
+  const recipe = createRecipe('chemex', 30);
+  assert.deepEqual(recipe.steps.filter(step => step.pouring).map(step => [step.start, step.end, step.target, step.rate]), [
+    [0, 18, 90, 5], [45, 71, 220, 5], [91, 117, 350, 5], [137, 163, 480, 5],
+  ]);
+  assert.equal(currentStep(recipe, 163), 7);
+  assert.equal(currentStep(recipe, 270), -1);
 });
 
 test('invalid recipes are rejected rather than silently clamped', () => {

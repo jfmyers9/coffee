@@ -108,8 +108,9 @@ The displayed ratio uses the unrounded quantities.
 
 This cumulative-rounding rule can move intermediate targets by 1 g at some
 non-default doses compared with the old engine, which rounded the bloom and
-total before splitting the remaining water. Default targets, final water/ice,
-and timing of the three original recipes are unchanged.
+total before splitting the remaining water. Final water/ice totals are unchanged.
+Hot V60 and Chemex now use dose-scaled pour timers targeting about 5 g/s;
+their bloom-end and total-time targets are preserved. Japanese Iced timing is unchanged.
 
 ## Timers
 

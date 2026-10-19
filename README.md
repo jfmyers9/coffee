@@ -92,9 +92,13 @@ See the [authoring guide](recipes/README.md) for the supported Cooklang conventi
 | Water | 16 × coffee weight | 16 × coffee weight |
 | Original Encore starting dial | 15 | 20 |
 | Temperature | 203°F default (editable) | 203°F default (editable) |
-| Bloom | 3 × coffee weight, pour for 15s; rest until 0:45 | Same |
-| Remaining water | Three equal pours, 25s each, with 20s rests | Three equal pours, 35s each, with 20s rests |
+| Bloom | 3 × coffee weight, ~12s at 20 g; rest until 0:45 | 3 × coffee weight, ~18s at 30 g; rest until 0:45 |
+| Remaining water | Three equal pours, ~17s each at 20 g, with 20s rests | Three equal pours, ~26s each at 30 g, with 20s rests |
 | Target total time | 3:30 | 4:30 |
+
+Hot V60 and Chemex pours target **about 5 g/s**. Bloom and main-pour durations scale with dose and round to whole seconds, keeping a comfortable stream at smaller doses instead of requiring a trickle. Bloom still ends at 0:45, inter-pour rests stay 20 seconds, and the final drawdown allowance adjusts to retain the approximate total-time targets above. Water quantities, ratios, grind suggestions, and temperatures are unchanged.
+
+The flow-rate starting point is informed by [Jonathan Gagné's kettle-stream experiments](https://coffeeadastra.com/2020/05/23/the-physics-of-kettle-streams/), which describe using 5 g/s with a Fellow Stagg EKG and adjusting for the coffee. These are app adaptations, **not Gagné's complete recipes or a universal optimum**. Use a steady, comfortable pour; small timing differences are fine. Japanese Iced retains its separate ~3 g/s recipe.
 
 These are opinionated starting recipes for medium-roast beans, not manufacturer-certified or universally optimal settings. The Encore suggestions are for the **original Encore, not Encore ESP**. Calibration and beans vary. If a brew drains too slowly or tastes bitter/astringent, try coarser; if it drains too quickly or tastes sour/thin, try finer. Taste matters more than hitting the exact time. With a bag selected, your grinder override is saved for that **bag + recipe**. Without a bag selected, it is saved as a recipe-wide fallback. The order is bag-specific override → saved recipe setting → built-in recipe suggestion. Clear a bag override to return to the fallback; older recipe settings are preserved. These preferences stay in this browser, and an active brew keeps its recorded grinder setting.
 

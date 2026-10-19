@@ -31,6 +31,21 @@ test('invalid doses cannot start and decimal typing works', async ({ page }) => 
   await expect(page.getByRole('button', { name: 'Start brewing' })).toBeEnabled();
 });
 
+test('hot pour guides keep a comfortable flow at smaller doses', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#rate')).toHaveText('5.0 g/s');
+  await expect(page.locator('#timeline small').nth(2)).toHaveText('Add 87 g in 0:17 · 5.1 g/s');
+  await page.getByLabel('Coffee beans').fill('12');
+  await expect(page.locator('#timeline small').nth(2)).toHaveText('Add 52 g in 0:10 · 5.2 g/s');
+  await page.getByRole('button', { name: /Chemex/ }).click();
+  await expect(page.locator('#rate')).toHaveText('5.0 g/s');
+  await expect(page.locator('#timeline small').nth(2)).toHaveText('Add 130 g in 0:26 · 5.0 g/s');
+  await page.getByLabel('Coffee beans').fill('20');
+  await expect(page.locator('#timeline small').nth(2)).toHaveText('Add 87 g in 0:17 · 5.1 g/s');
+  await page.getByRole('button', { name: 'Start brewing' }).click();
+  await expect(page.locator('#instruction')).toContainText('over about 0:12');
+});
+
 test('guided brew transitions, pauses, restores and finishes', async ({ page }) => {
   await page.clock.install({ time: new Date(Date.now() - 10 * 60 * 1000) });
   await page.goto('/');
@@ -65,16 +80,16 @@ test('step durations and countdown use minutes and seconds', async ({ page }) =>
   await page.clock.install({ time: new Date(Date.now() - 10 * 60 * 1000) });
   await page.goto('/');
   await page.getByRole('button', { name: /Chemex/ }).click();
-  await expect(page.locator('#timeline small').first()).toContainText('in 0:15');
-  await expect(page.locator('#timeline small').last()).toHaveText('1:20 · no pouring');
+  await expect(page.locator('#timeline small').first()).toContainText('in 0:18');
+  await expect(page.locator('#timeline small').last()).toHaveText('1:47 · no pouring');
   await page.getByRole('button', { name: 'Start brewing' }).click();
-  await page.clock.fastForward(190000);
+  await page.clock.fastForward(163000);
   await expect(page.locator('#instruction')).toContainText('until 4:30 on the brew clock');
-  await expect(page.locator('#timing')).toHaveText('1:20 left in this step');
+  await expect(page.locator('#timing')).toHaveText('1:47 left in this step');
   await page.clock.fastForward(21000);
-  await expect(page.locator('#timing')).toHaveText('0:59 left in this step');
+  await expect(page.locator('#timing')).toHaveText('1:26 left in this step');
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  await expect(page.locator('#timing')).toHaveText('0:59 left in this step · timer paused');
+  await expect(page.locator('#timing')).toHaveText('1:26 left in this step · timer paused');
 });
 
 test('discard requires confirmation', async ({ page }) => {
