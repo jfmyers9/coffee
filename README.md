@@ -14,6 +14,7 @@ A shared, mobile-first coffee service for your household. Keep a bean shelf, fol
 - **Results:** optional 1–5 rating, taste, notes, actual water added, and individual household servings with milk choice. Repeat a past brew without manually copying its settings.
 - **Shared cups:** today's completed brews and servings across the database, including entered caffeine amounts and explicitly unknown amounts. The day uses the viewing device's local time zone.
 - **Inventory:** original bag weight minus coffee used by all started brews, including discarded brews. This is an estimate; it doesn't account for spills or coffee used outside the app. Negative inventory is shown rather than silently hiding a discrepancy. Deleted mistakes/test brews do not count toward usage.
+- **Low coffee warning:** active bags with **80 g or less** remaining show a restock reminder on the bean shelf and, when selected, at the top of the Brew page. Empty or overdrawn bags show a replacement/check-weight warning. Unknown weights and archived bags do not trigger reminders. Warnings update when inventory refreshes after synced brews, corrections, deletions, or bag edits; offline usage is reflected after syncing. These are in-app warnings, not push notifications.
 
 ### Caffeine and breastfeeding
 

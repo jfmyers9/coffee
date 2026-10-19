@@ -90,6 +90,14 @@ const localDateTime = iso => {
 const bagName = bag => [bag?.roaster, bag?.name].filter(Boolean).join(' · ') || 'Unlinked coffee';
 const caffeineWarning = 'Caffeine varies by bean and brew. Decaf is not caffeine-free; unknown is not zero. Enter caffeine only when known—no estimate is inferred from grams. When breastfeeding, seek clinician guidance and count other caffeine sources.';
 
+// Use the shared inventory estimate; unknown weights must not look like empty bags.
+export function bagStockWarning(bag) {
+  if (!bag || bag.archived || !Number.isFinite(bag.remainingGrams) || bag.remainingGrams > 80) return '';
+  if (bag.remainingGrams <= 0) return `Bag empty: ${bagName(bag)} has no recorded coffee left. Open a replacement or check the recorded weight.`;
+  const remaining = bag.remainingGrams < 1 ? 'less than 1 g' : `about ${Math.round(bag.remainingGrams * 10) / 10} g`;
+  return `Running low: ${remaining} left in ${bagName(bag)}. Time to get a new bag.`;
+}
+
 async function resizePhoto(file) {
   if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
   if (file.size > 30 * 1024 * 1024) throw new Error('Choose a photo smaller than 30 MB.');
@@ -230,6 +238,8 @@ export async function initService({ recipes = [], onBrewAgain = () => {}, onBrew
       if (bag.tastingNotes) card.append(node('p', Array.isArray(bag.tastingNotes) ? bag.tastingNotes.join(', ') : bag.tastingNotes));
       card.append(node('p', `Roasted: ${bag.roastedOn || 'not recorded'} · Purchased: ${bag.purchasedOn || 'not recorded'}`, 'muted'));
       card.append(node('p', bag.remainingGrams == null ? 'Remaining weight unknown' : `${bag.remainingGrams} g remaining`));
+      const stockWarning = bagStockWarning(bag);
+      if (stockWarning) card.append(node('p', stockWarning, 'notice low-bag-warning'));
       if (bag.notes) card.append(node('p', bag.notes));
       const row = node('div', null, 'button-row');
       row.append(button('Edit bag', () => editBag(bag)));

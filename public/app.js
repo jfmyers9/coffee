@@ -2,7 +2,7 @@ import { resolveRecipe, createRecipe, recipeProgress, completeManualStep, format
 import { elapsed, startTimer, pauseTimer, resumeTimer, validTimer } from './timer.js';
 import { readState, saveState } from './storage.js';
 import { api, newId } from './api.js';
-import { initService } from './service.js';
+import { initService, bagStockWarning } from './service.js';
 import { queueBrew, flushBrews, watchSync, acceptServerVersions, forgetDeletedBrew } from './sync.js';
 import { createPhaseSound } from './sound.js';
 
@@ -161,6 +161,9 @@ async function main() {
       bag.remainingGrams == null ? null : `${Math.round(bag.remainingGrams)} g remaining`,
       bag.caffeineType !== 'regular' ? bag.caffeineType : null].filter(Boolean).join(' · ')
       : 'No bag selected. Your brew will still be saved in the journal.');
+    const stockWarning = bagStockWarning(bag);
+    setText('low-bag-warning', stockWarning);
+    $('low-bag-warning').hidden = !stockWarning;
     renderGrind();
     if (service) void refreshLastBrew();
   }
